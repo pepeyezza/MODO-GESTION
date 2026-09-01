@@ -378,7 +378,13 @@ svg.icon{width:18px;height:18px;flex:none;display:inline-block;vertical-align:mi
    ============================================================ */
 .table-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
 .table-toolbar{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
-.table-wrap{overflow-x:auto;}
+/* flex-shrink:0 evita un bug de renderizado de Chromium: cuando esta tabla
+   queda como hijo directo de un contenedor flex en columna (p.ej. el body de
+   un modal, .modal-body), el navegador a veces calcula bien la geometría
+   (getBoundingClientRect) pero nunca la pinta ni la hace clickeable -- la fila
+   queda invisible e inerte aunque exista en el DOM. Pasó, por ejemplo, con la
+   tabla de "Composición del costo unitario" en la ficha de producto. */
+.table-wrap{overflow-x:auto;flex-shrink:0;}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px;}
 thead th{
   text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);
