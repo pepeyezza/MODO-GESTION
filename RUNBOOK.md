@@ -44,7 +44,21 @@ superior) en tu computadora para los dos comandos del Paso 5.
 
 1. Dentro del proyecto en Vercel, andá a la pestaña **Storage**.
 2. Elegí crear una base **Postgres** (Neon, integrado en Vercel) y seguí el
-   asistente — un par de clics, sin configuración especial.
+   asistente hasta llegar al cuadro **"Install Integration"**. Ahí:
+   - **Project**: buscá y seleccioná tu proyecto — es obligatorio.
+   - **Environments**: tildá las tres — **Production, Preview y
+     Development**. Las dos primeras vienen tildadas solas, pero
+     **Development hay que tildarlo a mano**: si no, el comando
+     `vercel env pull .env` del Paso 5 no va a encontrar la conexión a la
+     base y ese paso va a fallar.
+   - **"Create database branch for deployment"**: dejalo **sin tildar**
+     (no lo necesitás — es para tener una copia separada de la base por
+     cada preview, algo de proyectos más grandes).
+   - **Custom Prefix**: dejalo **en blanco**. Lo que se ve en gris
+     ("STORAGE") es sólo un ejemplo, no un valor cargado — si escribís algo
+     ahí, la variable se crea con otro nombre y el proyecto no la va a
+     encontrar.
+   - Confirmá la instalación.
 3. Cuando termine, Vercel conecta sola la base al proyecto y crea la variable
    de entorno `DATABASE_URL` — no hay que copiarla ni escribirla a mano.
 

@@ -273,14 +273,20 @@ svg.icon{width:18px;height:18px;flex:none;display:inline-block;vertical-align:mi
 }
 
 /* Topbar */
+/* min-width:0 acá por la misma razón que en .content (ver más abajo): .topbar
+   es un item de un flex-container en columna (.flex-col.grow), así que sin esto
+   sus hijos (crumb + topbar-actions) pueden empujar el ancho de toda la página
+   en pantallas angostas en vez de achicarse/truncarse dentro del topbar. */
 .topbar{
   height:var(--topbar-h);border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:14px;padding:0 24px;
-  background:var(--surface);position:sticky;top:0;z-index:30;
+  background:var(--surface);position:sticky;top:0;z-index:30;min-width:0;
 }
-.crumb{font-size:12.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;}
+/* flex:1 + min-width:0 + ellipsis: el breadcrumb se trunca en vez de forzar
+   overflow horizontal cuando el nombre de la empresa/página es largo. */
+.crumb{font-size:12.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .crumb b{color:var(--text-primary);font-weight:600;}
-.topbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.topbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex:none;}
 .icon-btn{
   width:36px;height:36px;border-radius:10px;border:1px solid var(--border);
   background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-secondary);
@@ -300,7 +306,12 @@ svg.icon{width:18px;height:18px;flex:none;display:inline-block;vertical-align:mi
 .user-chip .who .role{font-size:10.5px;color:var(--text-muted);}
 
 /* Content */
-.content{padding:26px 30px 60px;max-width:1400px;width:100%;margin:0 auto;}
+/* min-width:0 es necesario porque .content es un item de un flex-container en
+   columna (.flex-col.grow) -- sin esto, un elemento ancho adentro (por ejemplo
+   una tabla con overflow-x:auto propio) empuja TODO el ancho de la página en
+   vez de scrollear solo la tabla, y el celular queda con scroll horizontal en
+   toda la pantalla. */
+.content{padding:26px 30px 60px;max-width:1400px;width:100%;margin:0 auto;min-width:0;box-sizing:border-box;}
 .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:22px;flex-wrap:wrap;}
 .page-title{font-size:23px;}
 .page-desc{color:var(--text-secondary);font-size:13.5px;margin-top:4px;max-width:640px;}
@@ -349,6 +360,7 @@ svg.icon{width:18px;height:18px;flex:none;display:inline-block;vertical-align:mi
 .grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;}
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+.diag-index-grid{grid-template-columns:0.9fr 1.6fr;}
 .stack-16{display:flex;flex-direction:column;gap:16px;}
 .stack-10{display:flex;flex-direction:column;gap:10px;}
 
@@ -630,10 +642,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .chat-input-row button{flex:none;}
 
 /* responsive */
+/* minmax(0,1fr) en vez de 1fr a secas: un grid-item por defecto no se achica
+   más allá del ancho de su contenido ("min-width:auto" implícito, igual que en
+   flexbox) -- con texto largo dentro (nombres de objetivos, indicadores, etc.)
+   eso empuja TODA la fila del grid (y la página) más ancha que la pantalla en
+   vez de que el texto se ajuste/trunque dentro de la tarjeta. minmax(0,1fr)
+   le saca ese piso mínimo a la columna. */
 @media (max-width: 1180px){
-  .kpi-grid{grid-template-columns:repeat(2,1fr);}
-  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr;}
-  .company-grid{grid-template-columns:repeat(2,1fr);}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:minmax(0,1fr);}
+  .company-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 @media (max-width: 880px){
   .app-shell{grid-template-columns:1fr;}
@@ -642,11 +660,17 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
   .sidebar-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:39;display:none;}
   .sidebar-scrim.show{display:block;}
   .content{padding:18px 16px 50px;}
-  .kpi-grid{grid-template-columns:1fr 1fr;}
-  .company-grid{grid-template-columns:1fr;}
-  .form-grid,.form-grid.cols-3{grid-template-columns:1fr;}
-  .module-grid{grid-template-columns:1fr;}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .company-grid{grid-template-columns:minmax(0,1fr);}
+  .form-grid,.form-grid.cols-3{grid-template-columns:minmax(0,1fr);}
+  .module-grid{grid-template-columns:minmax(0,1fr);}
   .hamburger{display:flex !important;}
+  .hide-mobile{display:none !important;}
+  .login-form-wrap{padding:24px;}
+  .topbar{padding:0 12px;gap:8px;}
+  .topbar-actions{gap:6px;}
+  .user-chip{padding:5px 8px 5px 5px;gap:6px;}
+  .user-chip .who{display:none;}
 }
 .hamburger{display:none;}
 </style>
@@ -1965,6 +1989,9 @@ function extractCompanySlice(db, companyId){
     helpRequests: keep(db.helpRequests), videoCalls: keep(db.videoCalls),
     chatMessages: keep(db.chatMessages), activityLog: keep(db.activityLog),
     livestockInventory: keep(db.livestockInventory), rainfallLog: keep(db.rainfallLog),
+    agroLots: keep(db.agroLots), agroTasks: keep(db.agroTasks),
+    agroLivestockMovements: keep(db.agroLivestockMovements),
+    agroMachinery: keep(db.agroMachinery), agroMachineryLog: keep(db.agroMachineryLog),
   };
 }
 function persist(){ doSync(); }
@@ -3378,7 +3405,7 @@ function renderCompanyDashboard(el, user, company, period){
   // ---- Acciones ----
   const accSum = G.actionsSummary(company.id);
   html += sectionTitle('check-circle','Acciones','Qué está haciendo la organización para mejorar');
-  html += '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">'+
+  html += '<div class="kpi-grid">'+
     ui.kpiCard({icon:'alert-triangle', label:'Vencidas', value:accSum.vencidas})+
     ui.kpiCard({icon:'calendar', label:'Próximas a vencer', value:accSum.proximasAVencer})+
     ui.kpiCard({icon:'trending-up', label:'Críticas', value:accSum.criticas})+
@@ -3995,7 +4022,7 @@ function openProductForm(company, existing, onDone){
       else if(m.tone==='warning') badgeHtml = ui.badge('warning','Debajo del margen objetivo ('+m.target+'%)');
       else badgeHtml = ui.badge('good','Margen saludable');
     }
-    return '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">'+
+    return '<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'+
       ui.kpiCard({icon:'calculator', label:'Costo unitario', value: fmt.currency(cost)})+
       ui.kpiCard({icon:'banknote', label:'Margen', value: fmt.currency(m.marginAbs)})+
       ui.kpiCard({icon:'percent', label:'Margen %', value: fmt.pct(m.marginPct,1)})+
@@ -4950,7 +4977,7 @@ function openDiagnosticoForm(company, onDone){
 
 function accionesSummaryStripHtml(company){
   const s = G.actionsSummary(company.id);
-  return '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">'+
+  return '<div class="kpi-grid" style="margin-bottom:16px">'+
     ui.kpiCard({icon:'alert-triangle', label:'Vencidas', value:s.vencidas})+
     ui.kpiCard({icon:'calendar', label:'Próximas a vencer', value:s.proximasAVencer})+
     ui.kpiCard({icon:'activity', label:'Críticas', value:s.criticas})+
@@ -5162,7 +5189,7 @@ function dynamicUserFieldsHtml(state, opts){
   }
   if(state.role==='USUARIO_EMPRESA'){
     html += '<div class="field" style="grid-column:1/-1"><label>Módulos permitidos</label>'+
-      '<div class="module-grid" style="grid-template-columns:repeat(2,1fr)">'+
+      '<div class="module-grid">'+
       G.OPTIONAL_MODULE_KEYS.map(k=>'<label class="checkline"><input type="checkbox" name="allowedModules" value="'+k+'" '+(state.allowedModules.includes(k)?'checked':'')+'/> '+esc(moduleFlagLabel(k))+'</label>').join('')+
       '</div><div class="hint">Además de estos módulos, siempre puede ver Dashboard, Planificación, Indicadores, Consultoría y Reportes si la empresa los tiene activos.</div></div>';
 
@@ -5361,7 +5388,7 @@ function renderAdminUsuarios(el, user, state){
 
   el.innerHTML = ui.pageHeader('Usuarios y permisos', 'Gestioná todos los accesos a MODO Gestión: consultores, administradores de empresa y usuarios, con sus módulos y permisos.',
     '<button class="btn btn-primary" id="newUserBtn">'+icon('plus')+' Nuevo usuario</button>')+
-    '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">'+
+    '<div class="kpi-grid">'+
       ui.kpiCard({icon:'users', label:'Usuarios totales', value: G.DB.users.length})+
       ui.kpiCard({icon:'shield-check', label:'Consultores', value: G.DB.users.filter(u=>u.role==='SUPER_ADMIN').length})+
       ui.kpiCard({icon:'user-cog', label:'Administradores de empresa', value: G.DB.users.filter(u=>u.role==='ADMIN_EMPRESA').length})+
@@ -6087,7 +6114,7 @@ function diagnosticoBodyHtml(company, diag, history, canEdit){
 
   const sortedDims = G.MODO_DIMENSIONS.map(d=>({...d, score: diag.scores[d.key]})).sort((a,b)=>(b.score||0)-(a.score||0));
 
-  return '<div class="grid-2" style="grid-template-columns:0.9fr 1.6fr;margin-bottom:16px">'+
+  return '<div class="grid-2 diag-index-grid" style="margin-bottom:16px">'+
       '<div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px">'+
         '<div class="subtle" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Índice MODO</div>'+
         '<div style="font-family:var(--font-display);font-weight:800;font-size:52px;line-height:1">'+(index!=null?index:'—')+'<span style="font-size:20px;color:var(--text-muted)">/100</span></div>'+
@@ -6359,6 +6386,8 @@ const QC_TYPES = [
     placeholder:'Ej: "Idea: armar un combo de productos para el día de la madre, prioridad alta"'},
   {key:'meeting', label:'Reunión', module:'consultoria',
     placeholder:'Ej: "Reunión de hoy con Diego y Carla: vimos el plan de acción de costos, quedó pendiente revisar precios, la próxima es el 10 de septiembre"'},
+  {key:'agroTask', label:'Tarea de campo (agro)', module:'agro',
+    placeholder:'Ej: "Hoy sembré soja en el lote Norte" · "Regué el lote 3, 2 horas" · "Compré 50 bolsas de fertilizante para el lote Sur, costó 300 mil"'},
 ];
 
 function speechSupported(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
@@ -6425,6 +6454,28 @@ function parseMethod(text){
   if(/cheque/.test(t)) return 'Cheque';
   return 'Transferencia';
 }
+function bestLotMatch(text, lots){
+  const t = text.toLowerCase();
+  let best = null;
+  (lots||[]).forEach(l=>{ if(l.name && t.includes(l.name.toLowerCase())) best = l.id; });
+  return best;
+}
+function parseAgroTaskType(text){
+  const t = text.toLowerCase();
+  if(/siembr|sembr/.test(t)) return 'Siembra';
+  if(/rieg|regu[eé]|regar/.test(t)) return 'Riego';
+  if(/monitor/.test(t)) return 'Monitoreo';
+  if(/fumig|fitosanitario|agroqu[ií]mico/.test(t)) return 'Fumigación';
+  if(/fertiliz|abon/.test(t)) return 'Fertilización';
+  if(/cosech/.test(t)) return 'Cosecha';
+  if(/avance|estado del cultivo|desarrollo del cultivo/.test(t)) return 'Avance de cultivo';
+  return 'Otro';
+}
+function parseAgroInput(text){
+  const m = text.match(/(\d+(?:[.,]\d+)?)\s*(bolsas?|kg|kilos?|litros?|lts?|l\b|hs\b|horas?|toneladas?|ton\b)\s*(?:de\s+)?([a-záéíóúñ][a-záéíóúñ\s]{2,30})?/i);
+  if(!m) return {inputQty:'', inputUnit:'', inputName:''};
+  return {inputQty: parseFloat(m[1].replace(',','.'))||'', inputUnit: m[2], inputName: (m[3]||'').trim()};
+}
 function parseQuickEntry(type, text, ctx){
   text = (text||'').trim();
   if(type==='income' || type==='expense'){
@@ -6453,6 +6504,21 @@ function parseQuickEntry(type, text, ctx){
   }
   if(type==='meeting'){
     return { date: parseDate(text, ctx.today), participants: ctx.userName||'', topics: text, agreements:'', tasks:'' };
+  }
+  if(type==='agroTask'){
+    const hasCostWords = /\$|cost[oó]|gast[eé]|pagu[eé]|compr[eé]/i.test(text);
+    const inputInfo = parseAgroInput(text);
+    return {
+      date: parseDate(text, ctx.today),
+      lotId: bestLotMatch(text, ctx.lots) || '',
+      type: parseAgroTaskType(text),
+      description: text.length>150 ? text.slice(0,150)+'…' : text,
+      progressPct: '',
+      inputName: inputInfo.inputName,
+      inputQty: inputInfo.inputQty,
+      inputUnit: inputInfo.inputUnit,
+      cost: hasCostWords ? parseAmount(text) : '',
+    };
   }
   return {};
 }
@@ -6505,6 +6571,20 @@ function reviewFieldsHtml(type, p, ctx){
       qcField('agreements','Acuerdos','textarea',p.agreements,{fullWidth:true})+
       qcField('tasks','Tareas asignadas','textarea',p.tasks,{fullWidth:true});
   }
+  if(type==='agroTask'){
+    return '<div class="form-grid">'+
+        qcField('date','Fecha','date',p.date,{required:true})+
+        qcField('lotId','Lote','select',p.lotId,{options:[{value:'',label:'Sin lote / general'}].concat((ctx.lots||[]).map(l=>({value:l.id,label:l.name})))})+
+        qcField('type','Tipo de tarea','select',p.type,{required:true, options:G.AGRO_TASK_TYPES||[]})+
+      '</div>'+
+      qcField('description','Detalle','textarea',p.description,{fullWidth:true})+
+      '<div class="form-grid">'+
+        qcField('inputName','Insumo usado','text',p.inputName,{})+
+        qcField('inputQty','Cantidad','number',p.inputQty,{step:'0.01'})+
+        qcField('inputUnit','Unidad','text',p.inputUnit,{})+
+        qcField('cost','Costo ($)','number',p.cost,{step:'0.01'})+
+      '</div>';
+  }
   return '';
 }
 
@@ -6525,6 +6605,9 @@ function openQuickCapture(user, company, opts){
     const ctx = {today: G.TODAY_ISO, userName: user.name};
     if(type==='income' || type==='expense'){
       ctx.categories = ((G.DB.financeCategories[company.id]||{})[type]) || [];
+    }
+    if(type==='agroTask'){
+      ctx.lots = G.crud.byCompany(G.DB.agroLots, company.id);
     }
     return ctx;
   }
@@ -6619,6 +6702,15 @@ function openQuickCapture(user, company, opts){
       G.crud.addItem(G.DB.consulting.meetings, {companyId:company.id, date, participants, topics, agreements, tasks, nextMeeting:''}, 'meet');
       G.logActivity('registró una reunión de consultoría por carga rápida (voz/texto)', company.name, company.id);
       G.toast('Reunión registrada');
+    } else if(type==='agroTask'){
+      const date = val('qcf_date'), lotId = val('qcf_lotId'), taskType = val('qcf_type'),
+        description = val('qcf_description'), inputName = val('qcf_inputName').trim(),
+        inputQty = parseFloat(val('qcf_inputQty'))||0, inputUnit = val('qcf_inputUnit').trim(),
+        cost = parseFloat(val('qcf_cost'))||0;
+      if(!taskType){ fail('Elegí el tipo de tarea.'); return; }
+      G.crud.addItem(G.DB.agroTasks, {companyId:company.id, date, lotId, type:taskType, description, progressPct:'', inputName, inputQty, inputUnit, cost}, 'atask');
+      G.logActivity('cargó una tarea de campo ('+taskType+') por carga rápida (voz/texto)', company.name, company.id);
+      G.toast('Tarea de campo registrada');
     }
     stopRecognizer();
     G.modal.close();
@@ -7039,6 +7131,22 @@ const AGRO_INDICATOR_DEFS = [
 ];
 
 const LIVESTOCK_CATEGORIES = ['Vacas','Vaquillonas','Toros','Novillos','Terneros/as','Otros'];
+const AGRO_TASK_TYPES = ['Siembra','Riego','Monitoreo','Fumigación','Fertilización','Cosecha','Avance de cultivo','Otro'];
+const AGRO_MOVEMENT_TYPES = ['Nacimiento','Compra','Venta','Muerte','Traslado'];
+const AGRO_MACHINE_TYPES = ['Tractor','Sembradora','Cosechadora','Pulverizadora / Mosquito','Camión / Acoplado','Otro'];
+// Se exportan a G porque Carga rápida (Parte 20, otra IIFE) necesita esta lista
+// para armar el formulario de revisión de "Tarea de campo" -- ver la nota sobre
+// visibilidad entre <script> en G.renderLogin más arriba en el archivo.
+G.AGRO_TASK_TYPES = AGRO_TASK_TYPES;
+
+const AGRO_TABS = [
+  {key:'resumen', label:'Resumen'},
+  {key:'lotes', label:'Lotes'},
+  {key:'tareas', label:'Tareas de campo'},
+  {key:'ganado', label:'Ganado'},
+  {key:'maquinaria', label:'Maquinaria'},
+  {key:'reportes', label:'Reportes'},
+];
 
 function ensureAgroIndicators(company){
   const existingKeys = new Set(G.DB.indicators.filter(k=>k.companyId===company.id && k.agroKey).map(k=>k.agroKey));
@@ -7059,18 +7167,46 @@ function agroIndicatorsFor(company, sectionKey){
 
 G.pages.agro = function(el, user, company){
   ensureAgroIndicators(company);
-  renderAgro(el, user, company);
+  const state = el._agroState || {tab:'resumen', reportView:'semana', taskLotFilter:'', taskTypeFilter:''};
+  el._agroState = state;
+  renderAgro(el, user, company, state);
 };
 
-function renderAgro(el, user, company){
+function renderAgro(el, user, company, state){
   const canCreate = G.perm.userCan(user,'agro','crear'), canEdit = G.perm.userCan(user,'agro','editar'), canDelete = G.perm.userCan(user,'agro','eliminar');
-  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores productivos, agrícolas, económicos y de recursos para el campo.', '') +
-    AGRO_SECTIONS.map((sec,i)=> sec.key==='recursos'
-      ? agroRecursosSectionHtml(sec, company, canCreate, canEdit, canDelete, i===0)
-      : agroSectionHtml(sec, company, i===0)
-    ).join('');
-  mountAgroSparklines(el, company);
-  wireAgroSection(el, user, company);
+
+  let body = '';
+  if(state.tab==='resumen') body = agroResumenHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='lotes') body = agroLotsTableHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='tareas') body = agroTasksTableHtml(company, state, canCreate, canEdit, canDelete);
+  else if(state.tab==='ganado') body = agroGanadoHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='maquinaria') body = agroMaquinariaHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='reportes') body = agroReportsHtml(company, state);
+
+  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores, lotes, tareas de campo, ganado, maquinaria y reportes.', agroHeaderActionsHtml(state, canCreate)) +
+    ui.tabsHtml(AGRO_TABS, state.tab) +
+    body;
+
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderAgro(el, user, company, state); });
+
+  if(state.tab==='resumen') mountAgroSparklines(el, company);
+  else if(state.tab==='reportes') mountAgroReportCharts(el, company, state);
+
+  wireAgroPage(el, user, company, state, canCreate, canEdit, canDelete);
+}
+
+function agroHeaderActionsHtml(state, canCreate){
+  if(state.tab==='lotes') return canCreate ? '<button class="btn btn-primary" id="agroNewLotBtn">'+icon('plus')+' Nuevo lote</button>' : '';
+  if(state.tab==='tareas') return canCreate ? '<button class="btn" id="agroQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="agroNewTaskBtn">'+icon('plus')+' Nueva tarea</button>' : '';
+  if(state.tab==='reportes') return '<select class="filter-select" id="agroReportView"><option value="semana" '+(state.reportView==='semana'?'selected':'')+'>Por semana</option><option value="lote" '+(state.reportView==='lote'?'selected':'')+'>Por lote</option></select>';
+  return '';
+}
+
+function agroResumenHtml(company, canCreate, canEdit, canDelete){
+  return AGRO_SECTIONS.map((sec,i)=> sec.key==='recursos'
+    ? agroRecursosSectionHtml(sec, company, canCreate, canEdit, canDelete, i===0)
+    : agroSectionHtml(sec, company, i===0)
+  ).join('');
 }
 
 function agroSectionHeadHtml(sec){
@@ -7130,40 +7266,407 @@ function mountAgroSparklines(el, company){
   }
 }
 
-function wireAgroSection(el, user, company){
+/* ---------- Lotes ---------- */
+function agroLotsTableHtml(company, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.agroLots, company.id);
+  const totalHa = G.util.sum(rows.filter(r=>r.active!==false), r=>parseFloat(r.areaHa)||0);
+  return '<div class="table-card">'+
+    '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' lote(s) · '+fmt.num(totalHa,1)+' ha activas en total</div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th>Cultivo / uso</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td><b>'+esc(r.name)+'</b></td>'+
+      '<td class="num mono">'+fmt.num(parseFloat(r.areaHa)||0,1)+'</td>'+
+      '<td>'+esc(r.crop||'—')+'</td>'+
+      '<td>'+ui.badge(r.active!==false?'good':'neutral', r.active!==false?'Activo':'Inactivo')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-lot="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-lot="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('layers','Todavía no cargaste lotes. Empezá agregando el primero.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openLotForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar lote':'Nuevo lote', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {active:true},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroLots, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'name', label:'Nombre del lote', required:true, placeholder:'Ej: Lote 3 - Norte'},
+      {key:'areaHa', label:'Hectáreas', type:'number', step:'0.1', required:true},
+      {key:'crop', label:'Cultivo / uso', placeholder:'Ej: Soja, Maíz, Ganadería'},
+      {key:'active', label:'Estado', type:'checkbox', checkLabel:'Lote activo'},
+    ],
+    onSubmit(v){
+      if(v.areaHa<0) return false;
+      if(existing){ G.crud.updateItem(G.DB.agroLots, existing.id, v); G.logActivity('editó el lote', v.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.agroLots, Object.assign({companyId:company.id}, v), 'lot'); G.logActivity('cargó un nuevo lote', v.name, company.id); G.toast('Lote agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Tareas de campo (diarias y semanales) ---------- */
+function agroTaskTypeTone(type){
+  const map = {'Siembra':'good','Riego':'accent','Monitoreo':'neutral','Fumigación':'warning','Fertilización':'accent','Cosecha':'good','Avance de cultivo':'neutral','Otro':'neutral'};
+  return map[type]||'neutral';
+}
+function agroTasksTableHtml(company, state, canCreate, canEdit, canDelete){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  const lotName = id=>{ const l=lots.find(x=>x.id===id); return l?l.name:'Sin lote'; };
+  let rows = G.crud.byCompany(G.DB.agroTasks, company.id).sort((a,b)=> b.date.localeCompare(a.date));
+  if(state.taskLotFilter) rows = rows.filter(r=>r.lotId===state.taskLotFilter);
+  if(state.taskTypeFilter) rows = rows.filter(r=>r.type===state.taskTypeFilter);
+  const totalCost = G.util.sum(rows, r=>parseFloat(r.cost)||0);
+  return '<div class="table-card">'+
+    '<div class="table-toolbar">'+
+      '<select class="filter-select" id="agroTaskLotFilter"><option value="">Todos los lotes</option>'+lots.map(l=>'<option value="'+l.id+'" '+(state.taskLotFilter===l.id?'selected':'')+'>'+esc(l.name)+'</option>').join('')+'</select>'+
+      '<select class="filter-select" id="agroTaskTypeFilter"><option value="">Todos los tipos</option>'+AGRO_TASK_TYPES.map(t=>'<option value="'+t+'" '+(state.taskTypeFilter===t?'selected':'')+'>'+t+'</option>').join('')+'</select>'+
+      '<div class="subtle" style="margin-left:auto;font-size:12.5px">'+rows.length+' tarea(s) · Costo total <b class="mono">'+fmt.currency(totalCost)+'</b></div>'+
+    '</div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Lote</th><th>Tipo</th><th>Detalle</th><th>Insumo</th><th class="num">Costo</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td>'+fmt.date(r.date)+'</td>'+
+      '<td>'+esc(lotName(r.lotId))+'</td>'+
+      '<td>'+ui.badge(agroTaskTypeTone(r.type), r.type)+'</td>'+
+      '<td>'+esc(r.description||'—')+(r.progressPct!==''&&r.progressPct!=null?'<br><span class="subtle" style="font-size:11px">Avance: '+r.progressPct+'%</span>':'')+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+(r.inputName?esc(r.inputName)+(r.inputQty?' · '+fmt.num(parseFloat(r.inputQty)||0)+' '+esc(r.inputUnit||''):''):'—')+'</td>'+
+      '<td class="num mono">'+(r.cost?fmt.currency(parseFloat(r.cost)||0):'—')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-task="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-task="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="7">'+ui.emptyState('calendar','Todavía no hay tareas cargadas. Registrá siembra, riego, monitoreo y todo lo que pase en el campo.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openTaskForm(company, existing, onDone){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  G.modal.form({
+    title: existing?'Editar tarea de campo':'Nueva tarea de campo', submitLabel: existing?'Guardar cambios':'Agregar',
+    wide:true, cols3:true,
+    initial: existing || {date:G.TODAY_ISO},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroTasks, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'lotId', label:'Lote', type:'select', placeholder:'Sin lote / general', options: lots.map(l=>({value:l.id,label:l.name}))},
+      {key:'type', label:'Tipo de tarea', type:'select', required:true, options: AGRO_TASK_TYPES},
+      {key:'description', label:'Detalle', type:'textarea', fullWidth:true, placeholder:'Ej: Siembra de soja, densidad 18 pl/m2'},
+      {key:'progressPct', label:'Avance del cultivo (%)', type:'number', hint:'Completá esto solo si el tipo es "Avance de cultivo"'},
+      {key:'inputName', label:'Insumo usado', placeholder:'Ej: Fertilizante urea'},
+      {key:'inputQty', label:'Cantidad de insumo', type:'number', step:'0.01'},
+      {key:'inputUnit', label:'Unidad', placeholder:'kg, l, bolsas...'},
+      {key:'cost', label:'Costo ($)', type:'number', step:'0.01'},
+    ],
+    onSubmit(v){
+      if(existing){ G.crud.updateItem(G.DB.agroTasks, existing.id, v); G.logActivity('editó una tarea de campo ('+v.type+')', company.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.agroTasks, Object.assign({companyId:company.id}, v), 'atask'); G.logActivity('cargó una tarea de campo ('+v.type+')', company.name, company.id); G.toast('Tarea agregada'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Ganado: inventario + movimientos ---------- */
+function agroLivestockMovementsCardHtml(company, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.agroLivestockMovements, company.id).sort((a,b)=> b.date.localeCompare(a.date));
+  const addBtn = canCreate ? '<button class="btn btn-sm" id="agroMoveNewBtn">'+icon('plus')+' Nuevo movimiento</button>' : '';
+  const body = '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Costo</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td>'+fmt.date(r.date)+'</td><td>'+esc(r.category)+'</td>'+
+      '<td>'+ui.badge(r.movementType==='Venta'?'good':r.movementType==='Muerte'?'critical':'neutral', r.movementType)+'</td>'+
+      '<td class="num mono">'+fmt.num(r.qty)+'</td><td class="num mono">'+(r.cost?fmt.currency(parseFloat(r.cost)||0):'—')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-move="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-move="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="6">'+ui.emptyState('activity','Sin movimientos de hacienda registrados.')+'</td></tr>')+
+    '</tbody></table></div>';
+  return ui.card('Movimientos de hacienda', rows.length?(rows.length+' registro(s)'):'', body, addBtn);
+}
+function agroGanadoHtml(company, canCreate, canEdit, canDelete){
+  return '<div class="grid-2">'+
+    agroLivestockCardHtml(company, canCreate, canEdit, canDelete)+
+    agroLivestockMovementsCardHtml(company, canCreate, canEdit, canDelete)+
+  '</div>';
+}
+function openMovementForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar movimiento de hacienda':'Nuevo movimiento de hacienda', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {date:G.TODAY_ISO},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroLivestockMovements, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'category', label:'Categoría', type:'select', required:true, options:LIVESTOCK_CATEGORIES},
+      {key:'movementType', label:'Tipo de movimiento', type:'select', required:true, options:AGRO_MOVEMENT_TYPES},
+      {key:'qty', label:'Cantidad de cabezas', type:'number', required:true},
+      {key:'cost', label:'Costo / valor ($)', type:'number', step:'0.01', hint:'Si aplica (compra o venta)'},
+      {key:'notes', label:'Notas', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(v.qty<0) return false;
+      if(existing){ G.crud.updateItem(G.DB.agroLivestockMovements, existing.id, v); G.logActivity('editó un movimiento de hacienda', v.category, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.agroLivestockMovements, Object.assign({companyId:company.id}, v), 'move'); G.logActivity('registró un movimiento de hacienda ('+v.movementType+')', v.category, company.id); G.toast('Movimiento agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Maquinaria: equipo + uso/mantenimiento ---------- */
+function agroMachineryCardHtml(company, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.agroMachinery, company.id);
+  const addBtn = canCreate ? '<button class="btn btn-sm" id="agroMachNewBtn">'+icon('plus')+' Nueva máquina</button>' : '';
+  const body = '<div class="table-wrap"><table><thead><tr><th>Máquina</th><th>Tipo</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.type||'—')+'</td><td>'+ui.badge(r.active!==false?'good':'neutral', r.active!==false?'Activa':'Inactiva')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-machine="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-machine="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td></tr>').join('')
+      : '<tr><td colspan="4">'+ui.emptyState('settings','Todavía no cargaste maquinaria.')+'</td></tr>')+
+    '</tbody></table></div>';
+  return ui.card('Maquinaria y equipos', rows.length?(rows.length+' equipo(s)'):'', body, addBtn);
+}
+function agroMachineryLogCardHtml(company, canCreate, canEdit, canDelete){
+  const machines = G.crud.byCompany(G.DB.agroMachinery, company.id);
+  const machineName = id=>{ const m=machines.find(x=>x.id===id); return m?m.name:'—'; };
+  const rows = G.crud.byCompany(G.DB.agroMachineryLog, company.id).sort((a,b)=> b.date.localeCompare(a.date));
+  const addBtn = canCreate ? '<button class="btn btn-sm" id="agroMachLogNewBtn">'+icon('plus')+' Nuevo registro</button>' : '';
+  const body = '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Máquina</th><th>Tipo</th><th class="num">Horas / km</th><th class="num">Costo</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr><td>'+fmt.date(r.date)+'</td><td>'+esc(machineName(r.machineId))+'</td><td>'+ui.badge(r.kind==='Mantenimiento'?'warning':'neutral', r.kind)+'</td>'+
+      '<td class="num mono">'+(r.hours?fmt.num(parseFloat(r.hours)||0,1):'—')+'</td><td class="num mono">'+(r.cost?fmt.currency(parseFloat(r.cost)||0):'—')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-machlog="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-machlog="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td></tr>').join('')
+      : '<tr><td colspan="6">'+ui.emptyState('calendar','Sin uso ni mantenimiento registrado.')+'</td></tr>')+
+    '</tbody></table></div>';
+  return ui.card('Uso y mantenimiento', rows.length?(rows.length+' registro(s)'):'', body, addBtn);
+}
+function agroMaquinariaHtml(company, canCreate, canEdit, canDelete){
+  return '<div class="grid-2">'+
+    agroMachineryCardHtml(company, canCreate, canEdit, canDelete)+
+    agroMachineryLogCardHtml(company, canCreate, canEdit, canDelete)+
+  '</div>';
+}
+function openMachineForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar máquina':'Nueva máquina', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {active:true},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroMachinery, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'name', label:'Nombre / identificación', required:true, placeholder:'Ej: Tractor John Deere 6110'},
+      {key:'type', label:'Tipo', type:'select', required:true, options:AGRO_MACHINE_TYPES},
+      {key:'active', label:'Estado', type:'checkbox', checkLabel:'En uso'},
+    ],
+    onSubmit(v){
+      if(existing){ G.crud.updateItem(G.DB.agroMachinery, existing.id, v); G.logActivity('editó una máquina', v.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.agroMachinery, Object.assign({companyId:company.id}, v), 'mach'); G.logActivity('cargó una máquina', v.name, company.id); G.toast('Máquina agregada'); }
+      onDone();
+    }
+  });
+}
+function openMachineLogForm(company, existing, onDone){
+  const machines = G.crud.byCompany(G.DB.agroMachinery, company.id);
+  G.modal.form({
+    title: existing?'Editar registro de maquinaria':'Nuevo registro de uso o mantenimiento', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {date:G.TODAY_ISO, kind:'Uso'},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroMachineryLog, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'machineId', label:'Máquina', type:'select', required:true, options: machines.map(m=>({value:m.id,label:m.name}))},
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'kind', label:'Tipo', type:'select', required:true, options:['Uso','Mantenimiento']},
+      {key:'hours', label:'Horas / km', type:'number', step:'0.1'},
+      {key:'cost', label:'Costo ($)', type:'number', step:'0.01'},
+      {key:'notes', label:'Notas', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(existing){ G.crud.updateItem(G.DB.agroMachineryLog, existing.id, v); G.logActivity('editó un registro de maquinaria', company.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.agroMachineryLog, Object.assign({companyId:company.id}, v), 'mlog'); G.logActivity('registró '+(v.kind==='Uso'?'uso':'mantenimiento')+' de maquinaria', company.name, company.id); G.toast('Registro agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Reportes: por semana / por lote ---------- */
+function agroIsoDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function agroWeeklyReport(company, weeksCount){
+  weeksCount = weeksCount||8;
+  const today = new Date(G.TODAY_ISO+'T00:00:00');
+  const day = (today.getDay()+6)%7; // lunes=0 ... domingo=6
+  const thisMonday = new Date(today); thisMonday.setDate(today.getDate()-day);
+  const weeks = [];
+  for(let i=weeksCount-1;i>=0;i--){
+    const monday = new Date(thisMonday); monday.setDate(thisMonday.getDate()-7*i);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+    const lbl = d=> String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+    weeks.push({start: agroIsoDate(monday), end: agroIsoDate(sunday), label: lbl(monday)+' al '+lbl(sunday), cost:0, inputs:{}});
+  }
+  const idxOf = dateStr=> weeks.findIndex(w=> dateStr>=w.start && dateStr<=w.end);
+  G.crud.byCompany(G.DB.agroTasks, company.id).forEach(t=>{
+    const i = idxOf(t.date); if(i<0) return;
+    weeks[i].cost += parseFloat(t.cost)||0;
+    if(t.inputName){ weeks[i].inputs[t.inputName] = (weeks[i].inputs[t.inputName]||0) + (parseFloat(t.inputQty)||0); }
+  });
+  G.crud.byCompany(G.DB.agroMachineryLog, company.id).forEach(m=>{
+    const i = idxOf(m.date); if(i<0) return;
+    weeks[i].cost += parseFloat(m.cost)||0;
+  });
+  G.crud.byCompany(G.DB.agroLivestockMovements, company.id).forEach(mv=>{
+    const i = idxOf(mv.date); if(i<0) return;
+    weeks[i].cost += parseFloat(mv.cost)||0;
+  });
+  return weeks;
+}
+function agroLotReport(company){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  const tasks = G.crud.byCompany(G.DB.agroTasks, company.id);
+  const rowFor = (lot, items)=>{
+    const cost = G.util.sum(items, t=>parseFloat(t.cost)||0);
+    const inputs = {};
+    items.forEach(t=>{ if(t.inputName) inputs[t.inputName] = (inputs[t.inputName]||0) + (parseFloat(t.inputQty)||0); });
+    const areaHa = parseFloat(lot.areaHa)||0;
+    const dates = items.map(t=>t.date).sort();
+    return {lot, taskCount: items.length, cost, costPerHa: areaHa>0?cost/areaHa:null, inputs, lastDate: dates.length?dates[dates.length-1]:null};
+  };
+  const rows = lots.map(lot=> rowFor(lot, tasks.filter(t=>t.lotId===lot.id)));
+  const unassigned = tasks.filter(t=>!t.lotId);
+  if(unassigned.length) rows.push(rowFor({id:'', name:'Sin lote asignado', areaHa:0}, unassigned));
+  return rows;
+}
+function agroReportsHtml(company, state){
+  return state.reportView==='lote' ? agroReportByLoteHtml(company) : agroReportByWeekHtml(company);
+}
+function agroReportByWeekHtml(company){
+  const weeks = agroWeeklyReport(company, 8);
+  const body = '<div id="agroWeekChart" style="margin-bottom:14px"></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Semana</th><th class="num">Costo total</th><th>Insumos usados</th></tr></thead><tbody>'+
+    weeks.map(w=>'<tr><td>'+esc(w.label)+'</td><td class="num mono">'+fmt.currency(w.cost)+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+(Object.keys(w.inputs).length ? Object.entries(w.inputs).map(([k,v])=>esc(k)+': '+fmt.num(v,1)).join(', ') : '—')+'</td></tr>').join('')+
+    '</tbody></table></div>';
+  return ui.card('Costos por semana', 'Últimas 8 semanas — tareas de campo, maquinaria y movimientos de hacienda', body);
+}
+function agroReportByLoteHtml(company){
+  const report = agroLotReport(company);
+  const body = '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th class="num">Tareas</th><th class="num">Costo total</th><th class="num">Costo / ha</th><th>Insumos usados</th><th>Última actividad</th></tr></thead><tbody>'+
+    (report.length ? report.map(r=>'<tr>'+
+      '<td><b>'+esc(r.lot.name)+'</b></td>'+
+      '<td class="num mono">'+(r.lot.areaHa?fmt.num(parseFloat(r.lot.areaHa)||0,1):'—')+'</td>'+
+      '<td class="num mono">'+r.taskCount+'</td>'+
+      '<td class="num mono">'+fmt.currency(r.cost)+'</td>'+
+      '<td class="num mono">'+(r.costPerHa!=null?fmt.currency(r.costPerHa):'—')+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+(Object.keys(r.inputs).length?Object.entries(r.inputs).map(([k,v])=>esc(k)+': '+fmt.num(v,1)).join(', '):'—')+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+(r.lastDate?fmt.date(r.lastDate):'—')+'</td>'+
+    '</tr>').join('') : '<tr><td colspan="7">'+ui.emptyState('layers','Cargá lotes y tareas para ver el reporte.')+'</td></tr>')+
+    '</tbody></table></div>';
+  return ui.card('Costos por lote', 'Costo acumulado, insumos y costo por hectárea de cada lote', body);
+}
+function mountAgroReportCharts(el, company, state){
+  if(state.reportView==='lote') return;
+  const chartEl = document.getElementById('agroWeekChart');
+  if(chartEl) G.charts.bar(chartEl, agroWeeklyReport(company, 8).map(w=>({label:w.label, value:w.cost})));
+}
+
+/* ---------- Wiring de toda la página ---------- */
+function wireAgroPage(el, user, company, state, canCreate, canEdit, canDelete){
+  const rerender = ()=> renderAgro(el, user, company, state);
+
+  // Resumen: KPIs, inventario de hacienda y clima (igual que antes)
   el.querySelectorAll('[data-edit-kpi]').forEach(btn=>btn.addEventListener('click', ()=>{
     const k = G.DB.indicators.find(x=>x.id===btn.getAttribute('data-edit-kpi'));
-    if(k) G.openIndicatorForm(company, k, ()=>renderAgro(el,user,company));
+    if(k) G.openIndicatorForm(company, k, rerender);
   }));
   el.querySelectorAll('[data-update-kpi]').forEach(btn=>btn.addEventListener('click', e=>{
     e.stopPropagation();
     const k = G.DB.indicators.find(x=>x.id===btn.getAttribute('data-update-kpi'));
-    if(k) G.openIndicatorUpdate(company, k, ()=>renderAgro(el,user,company));
+    if(k) G.openIndicatorUpdate(company, k, rerender);
   }));
   const livBtn = document.getElementById('agroLivestockNewBtn');
-  if(livBtn) livBtn.addEventListener('click', ()=>openLivestockForm(company, null, ()=>renderAgro(el,user,company)));
+  if(livBtn) livBtn.addEventListener('click', ()=>openLivestockForm(company, null, rerender));
   el.querySelectorAll('[data-edit-livestock]').forEach(b=>b.addEventListener('click', ()=>{
-    openLivestockForm(company, G.DB.livestockInventory.find(r=>r.id===b.getAttribute('data-edit-livestock')), ()=>renderAgro(el,user,company));
+    openLivestockForm(company, G.DB.livestockInventory.find(r=>r.id===b.getAttribute('data-edit-livestock')), rerender);
   }));
   el.querySelectorAll('[data-del-livestock]').forEach(b=>b.addEventListener('click', ()=>{
     G.modal.confirm({title:'Eliminar categoría de hacienda', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
       G.crud.removeItem(G.DB.livestockInventory, b.getAttribute('data-del-livestock'));
       G.logActivity('eliminó una categoría del inventario de hacienda', company.name, company.id);
-      G.toast('Eliminado'); renderAgro(el,user,company);
+      G.toast('Eliminado'); rerender();
     }});
   }));
   const rainBtn = document.getElementById('agroRainNewBtn');
-  if(rainBtn) rainBtn.addEventListener('click', ()=>openRainfallForm(company, null, ()=>renderAgro(el,user,company)));
+  if(rainBtn) rainBtn.addEventListener('click', ()=>openRainfallForm(company, null, rerender));
   el.querySelectorAll('[data-edit-rain]').forEach(b=>b.addEventListener('click', ()=>{
-    openRainfallForm(company, G.DB.rainfallLog.find(r=>r.id===b.getAttribute('data-edit-rain')), ()=>renderAgro(el,user,company));
+    openRainfallForm(company, G.DB.rainfallLog.find(r=>r.id===b.getAttribute('data-edit-rain')), rerender);
   }));
   el.querySelectorAll('[data-del-rain]').forEach(b=>b.addEventListener('click', ()=>{
     G.modal.confirm({title:'Eliminar registro de lluvia', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
       G.crud.removeItem(G.DB.rainfallLog, b.getAttribute('data-del-rain'));
       G.logActivity('eliminó un registro climático', company.name, company.id);
-      G.toast('Eliminado'); renderAgro(el,user,company);
+      G.toast('Eliminado'); rerender();
     }});
   }));
+
+  // Lotes
+  const newLotBtn = document.getElementById('agroNewLotBtn');
+  if(newLotBtn) newLotBtn.addEventListener('click', ()=>openLotForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-lot]').forEach(b=>b.addEventListener('click', ()=>{
+    openLotForm(company, G.DB.agroLots.find(r=>r.id===b.getAttribute('data-edit-lot')), rerender);
+  }));
+  el.querySelectorAll('[data-del-lot]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar lote', desc:'Las tareas ya cargadas para este lote no se borran, pero quedan sin lote asignado.', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.agroLots, b.getAttribute('data-del-lot'));
+      G.logActivity('eliminó un lote', company.name, company.id);
+      G.toast('Lote eliminado'); rerender();
+    }});
+  }));
+
+  // Tareas de campo
+  const lotFilter = document.getElementById('agroTaskLotFilter');
+  if(lotFilter) lotFilter.addEventListener('change', ()=>{ state.taskLotFilter = lotFilter.value; rerender(); });
+  const typeFilter = document.getElementById('agroTaskTypeFilter');
+  if(typeFilter) typeFilter.addEventListener('change', ()=>{ state.taskTypeFilter = typeFilter.value; rerender(); });
+  const newTaskBtn = document.getElementById('agroNewTaskBtn');
+  if(newTaskBtn) newTaskBtn.addEventListener('click', ()=>openTaskForm(company, null, rerender));
+  const quickBtn = document.getElementById('agroQuickBtn');
+  if(quickBtn) quickBtn.addEventListener('click', ()=> G.openQuickCapture(user, company, {type:'agroTask', onDone: rerender}));
+  el.querySelectorAll('[data-edit-task]').forEach(b=>b.addEventListener('click', ()=>{
+    openTaskForm(company, G.DB.agroTasks.find(r=>r.id===b.getAttribute('data-edit-task')), rerender);
+  }));
+  el.querySelectorAll('[data-del-task]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar tarea', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.agroTasks, b.getAttribute('data-del-task'));
+      G.logActivity('eliminó una tarea de campo', company.name, company.id);
+      G.toast('Tarea eliminada'); rerender();
+    }});
+  }));
+
+  // Ganado: movimientos (el inventario reutiliza los mismos handlers de Resumen, arriba)
+  const moveBtn = document.getElementById('agroMoveNewBtn');
+  if(moveBtn) moveBtn.addEventListener('click', ()=>openMovementForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-move]').forEach(b=>b.addEventListener('click', ()=>{
+    openMovementForm(company, G.DB.agroLivestockMovements.find(r=>r.id===b.getAttribute('data-edit-move')), rerender);
+  }));
+  el.querySelectorAll('[data-del-move]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar movimiento', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.agroLivestockMovements, b.getAttribute('data-del-move'));
+      G.logActivity('eliminó un movimiento de hacienda', company.name, company.id);
+      G.toast('Eliminado'); rerender();
+    }});
+  }));
+
+  // Maquinaria
+  const machBtn = document.getElementById('agroMachNewBtn');
+  if(machBtn) machBtn.addEventListener('click', ()=>openMachineForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-machine]').forEach(b=>b.addEventListener('click', ()=>{
+    openMachineForm(company, G.DB.agroMachinery.find(r=>r.id===b.getAttribute('data-edit-machine')), rerender);
+  }));
+  el.querySelectorAll('[data-del-machine]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar máquina', desc:'Los registros de uso y mantenimiento ya cargados no se borran.', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.agroMachinery, b.getAttribute('data-del-machine'));
+      G.logActivity('eliminó una máquina', company.name, company.id);
+      G.toast('Eliminada'); rerender();
+    }});
+  }));
+  const machLogBtn = document.getElementById('agroMachLogNewBtn');
+  if(machLogBtn) machLogBtn.addEventListener('click', ()=>{
+    if(!G.crud.byCompany(G.DB.agroMachinery, company.id).length){ G.toast('Cargá primero una máquina en "Maquinaria y equipos".'); return; }
+    openMachineLogForm(company, null, rerender);
+  });
+  el.querySelectorAll('[data-edit-machlog]').forEach(b=>b.addEventListener('click', ()=>{
+    openMachineLogForm(company, G.DB.agroMachineryLog.find(r=>r.id===b.getAttribute('data-edit-machlog')), rerender);
+  }));
+  el.querySelectorAll('[data-del-machlog]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar registro', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.agroMachineryLog, b.getAttribute('data-del-machlog'));
+      G.logActivity('eliminó un registro de maquinaria', company.name, company.id);
+      G.toast('Eliminado'); rerender();
+    }});
+  }));
+
+  // Reportes
+  const reportSel = document.getElementById('agroReportView');
+  if(reportSel) reportSel.addEventListener('change', ()=>{ state.reportView = reportSel.value; rerender(); });
 }
 
 function openLivestockForm(company, existing, onDone){

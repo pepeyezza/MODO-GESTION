@@ -128,6 +128,11 @@ export interface DbShape {
   activityLog: any[];
   livestockInventory: any[];
   rainfallLog: any[];
+  agroLots: any[];
+  agroTasks: any[];
+  agroLivestockMovements: any[];
+  agroMachinery: any[];
+  agroMachineryLog: any[];
 }
 
 function emptyDbShape(): DbShape {
@@ -157,6 +162,11 @@ function emptyDbShape(): DbShape {
     activityLog: [],
     livestockInventory: [],
     rainfallLog: [],
+    agroLots: [],
+    agroTasks: [],
+    agroLivestockMovements: [],
+    agroMachinery: [],
+    agroMachineryLog: [],
   };
 }
 
@@ -165,6 +175,7 @@ const FLAT_KEYS = [
   'employees', 'evaluations', 'innovation', 'objectives', 'indicators',
   'modoDiagnostics', 'helpRequests', 'videoCalls', 'chatMessages',
   'activityLog', 'livestockInventory', 'rainfallLog',
+  'agroLots', 'agroTasks', 'agroLivestockMovements', 'agroMachinery', 'agroMachineryLog',
 ] as const;
 
 // Arma la respuesta de GET /api/bootstrap a partir de las filas ya autorizadas para

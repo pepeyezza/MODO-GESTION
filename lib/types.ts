@@ -76,6 +76,11 @@ export interface OperationalData {
   activityLog: any[];
   livestockInventory: any[];
   rainfallLog: any[];
+  agroLots: any[];
+  agroTasks: any[];
+  agroLivestockMovements: any[];
+  agroMachinery: any[];
+  agroMachineryLog: any[];
 }
 
 export function emptyOperationalData(): OperationalData {
@@ -102,5 +107,10 @@ export function emptyOperationalData(): OperationalData {
     activityLog: [],
     livestockInventory: [],
     rainfallLog: [],
+    agroLots: [],
+    agroTasks: [],
+    agroLivestockMovements: [],
+    agroMachinery: [],
+    agroMachineryLog: [],
   };
 }
