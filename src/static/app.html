@@ -362,6 +362,21 @@ svg.icon{width:18px;height:18px;flex:none;display:inline-block;vertical-align:mi
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
 .diag-index-grid{grid-template-columns:0.9fr 1.6fr;}
+
+/* Mapa de lotes (Agropecuario): grilla simple de tarjetas, primera versión
+   antes de un croquis armable a mano. flex-wrap para que en mobile las
+   tarjetas caigan a su propia fila en vez de forzar overflow horizontal. */
+.lot-map-grid{display:flex;flex-wrap:wrap;gap:14px;}
+.lot-tile{
+  flex-basis:160px;flex-shrink:0;min-width:150px;
+  background:var(--surface);border:1px solid var(--border);border-top:4px solid var(--accent);
+  border-radius:var(--radius-lg);padding:14px 16px;position:relative;
+  display:flex;flex-direction:column;justify-content:center;gap:4px;
+}
+.lot-tile-name{font-weight:700;font-size:14px;}
+.lot-tile-crop{font-size:12px;font-weight:600;}
+.lot-tile-meta{font-size:11.5px;color:var(--text-muted);}
+.lot-tile-inactive{position:absolute;top:10px;right:12px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;}
 .stack-16{display:flex;flex-direction:column;gap:16px;}
 .stack-10{display:flex;flex-direction:column;gap:10px;}
 
@@ -674,6 +689,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
   .user-chip .who{display:none;}
 }
 .hamburger{display:none;}
+
+/* Imprimir / Descargar PDF: se oculta todo el "chrome" de la app (menú,
+   barra superior, botones, modales, toasts) y el contenido queda a ancho
+   completo -- así cualquier pantalla se puede imprimir o guardar como PDF
+   desde el navegador (Ctrl/Cmd+P, o el botón "Imprimir / PDF" que llama a
+   window.print()) sin que se corte el menú lateral en el resultado. */
+@media print{
+  .sidebar, .topbar, .sidebar-scrim, .consultant-strip, .no-print, .page-actions .btn:not([data-print-btn]),
+  .modal-overlay, .toast-wrap, .row-actions, .table-toolbar .filter-select{display:none !important;}
+  .app-shell{display:block !important;}
+  .content{padding:0 !important;max-width:none !important;}
+  .card, .table-card{border:1px solid #ccc !important;box-shadow:none !important;break-inside:avoid;}
+  body{background:#fff !important;}
+}
 </style>
 
 <div id="app"></div>
@@ -726,6 +755,7 @@ const ICONS = {
   briefcase: 'M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM8 7V5h8v2',
   filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  printer: 'M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z',
   upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
   eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   'shield-check': 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4zM9 12l2 2 4-4',
@@ -2653,6 +2683,22 @@ G.ui.progressBar = function(pct, tone){
   return '<div class="progress-track"><div class="progress-fill '+(tone||'')+'" style="width:'+p+'%"></div></div>';
 };
 
+/* ---------- Imprimir / Descargar PDF ----------
+   Un solo botón reutilizable: llama a window.print(), que en cualquier
+   navegador (computadora o celular) deja elegir una impresora O "Guardar como
+   PDF" -- cubre los dos pedidos con un solo mecanismo, sin sumar una librería
+   nueva. El botón lleva "no-print" para no aparecer él mismo en el resultado;
+   el resto de la interfaz (menú lateral, barra superior, botones) se oculta
+   vía la hoja de estilos @media print. Un solo listener delegado en document
+   alcanza para cualquier botón con data-print-btn en toda la app, sin tener
+   que cablear un click handler por página. */
+G.ui.printBtn = function(label){
+  return '<button type="button" class="btn btn-sm no-print" data-print-btn>'+icon('printer')+' '+esc(label||'Imprimir / PDF')+'</button>';
+};
+document.addEventListener('click', function(e){
+  if(e.target.closest('[data-print-btn]')) window.print();
+});
+
 /* ---------- Marca: toggle-switch ("MODO") ---------- */
 G.ui.toggleMarkHtml = function(emHeight){
   return '<span class="toggle-mark" style="height:'+(emHeight||0.6)+'em"><span class="toggle-mark-dot"></span></span>';
@@ -3360,7 +3406,7 @@ function renderCompanyDashboard(el, user, company, period){
   const indicators = G.DB.indicators.filter(i=>i.companyId===company.id);
   const pendingActions = G.DB.consulting.actions.filter(a=>a.companyId===company.id && a.status!=='Completada');
 
-  let html = ui.pageHeader('Centro de Gestión — '+company.name, company.activity, G.periodToggleHtml(period));
+  let html = ui.pageHeader('Centro de Gestión — '+company.name, company.activity, G.periodToggleHtml(period)+ui.printBtn());
 
   const badAlerts = alerts.filter(a=>a.level!=='good');
 
@@ -3620,8 +3666,9 @@ function renderFinanzas(el, user, company, state){
   else if(state.tab==='egresos') body = finTableHtml(company, 'expense', state, canCreate, canEdit, canDelete);
   else if(state.tab==='categorias') body = finCategoriesHtml(company);
 
+  const canExportFin = G.perm.userCan(user, 'finanzas', 'exportar');
   el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.',
-      state.tab==='resumen' ? G.periodToggleHtml(state.period) :
+      state.tab==='resumen' ? G.periodToggleHtml(state.period)+(canExportFin?ui.printBtn():'') :
       (canCreate ? '<button class="btn" id="finImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn" id="finQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="finNewBtn">'+icon('plus')+' '+(state.tab==='egresos'?'Nuevo egreso':'Nuevo ingreso')+'</button>' : '')) +
     tabsHtml([{key:'resumen',label:'Resumen'},{key:'ingresos',label:'Ingresos'},{key:'egresos',label:'Egresos'},{key:'categorias',label:'Categorías'}], state.tab) +
     body;
@@ -3818,7 +3865,7 @@ function renderCostos(el, user, company, state){
   const canCreate = G.perm.userCan(user,'costos','crear'), canEdit = G.perm.userCan(user,'costos','editar'), canDelete = G.perm.userCan(user,'costos','eliminar');
   const gastro = isGastroCompany(company);
   let body='', actions='';
-  if(state.tab==='resumen') body = costResumenHtml(company);
+  if(state.tab==='resumen'){ body = costResumenHtml(company); actions = G.perm.userCan(user,'costos','exportar')?ui.printBtn():''; }
   else if(state.tab==='productos'){ body = productsTableHtml(company, canEdit, canDelete); actions = canCreate?'<button class="btn btn-primary" id="prodNewBtn">'+icon('plus')+' Nueva ficha de producto</button>':''; }
   else if(state.tab==='carta'){ body = cartaHtml(company); actions = canCreate?'<button class="btn btn-primary" id="prodNewBtn">'+icon('plus')+' Nuevo plato</button>':''; }
   else if(state.tab==='fijos'){ body = costFixedTableHtml(company, canEdit, canDelete); actions = canCreate?'<button class="btn btn-primary" id="costNewBtn">'+icon('plus')+' Nuevo costo fijo</button>':''; }
@@ -5100,7 +5147,7 @@ function openNotaForm(company, onDone){
 const G = window.GESTIONA;
 const icon = G.icon, fmt = G.fmt, esc = G.util.escapeHtml, ui = G.ui;
 
-const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh'];
+const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh','innovacion','agro'];
 const PERM_ACTIONS = [
   {key:'crear', label:'Crear'},
   {key:'editar', label:'Editar'},
@@ -5201,7 +5248,7 @@ function dynamicUserFieldsHtml(state, opts){
         return '<td><input type="checkbox" name="perm_'+m+'_'+a.key+'" '+(checked?'checked':'')+'/></td>';
       }).join('')+'</tr>').join('')+
       '</tbody></table></div></div>'+
-      '<div class="hint">"Ver" está siempre habilitado si el módulo está asignado. Estos permisos definen qué acciones adicionales puede realizar el usuario dentro de cada módulo.</div></div>';
+      '<div class="hint">"Ver" está siempre habilitado si el módulo está asignado. "Exportar" habilita el botón "Imprimir / PDF" de ese módulo. Estos permisos definen qué acciones adicionales puede realizar el usuario dentro de cada módulo.</div></div>';
   }
   return html;
 }
@@ -5216,7 +5263,13 @@ function openUserForm(opts, onDone){
     role: existing ? existing.role : (allowedRoles.includes('ADMIN_EMPRESA') ? 'ADMIN_EMPRESA' : allowedRoles[0]),
     companyId: existing ? existing.companyId : (lockCompanyId || null),
     allowedModules: existing ? (existing.allowedModules||[]).slice() : [],
-    permissions: existing && existing.permissions && Object.keys(existing.permissions).length ? JSON.parse(JSON.stringify(existing.permissions)) : defaultPermsFor(),
+    // Se arranca de los valores por defecto (que son los que ya rige el sistema
+    // cuando un módulo no tiene permisos guardados explícitamente, ver
+    // G.perm.userCan) y se pisan con lo que el usuario ya tenga guardado. Así,
+    // si se agrega un módulo nuevo a PERM_MODULES más adelante, un usuario
+    // existente no pierde silenciosamente el acceso que ya tenía sólo por
+    // abrir y volver a guardar su formulario.
+    permissions: Object.assign(defaultPermsFor(), existing && existing.permissions ? JSON.parse(JSON.stringify(existing.permissions)) : {}),
   };
 
   const overlay = G.modal.open(
@@ -7168,23 +7221,24 @@ function agroIndicatorsFor(company, sectionKey){
 
 G.pages.agro = function(el, user, company){
   ensureAgroIndicators(company);
-  const state = el._agroState || {tab:'resumen', reportView:'semana', taskLotFilter:'', taskTypeFilter:''};
+  const state = el._agroState || {tab:'resumen', reportView:'semana', taskLotFilter:'', taskTypeFilter:'', lotsView:'lista'};
   el._agroState = state;
   renderAgro(el, user, company, state);
 };
 
 function renderAgro(el, user, company, state){
   const canCreate = G.perm.userCan(user,'agro','crear'), canEdit = G.perm.userCan(user,'agro','editar'), canDelete = G.perm.userCan(user,'agro','eliminar');
+  const canExport = G.perm.userCan(user,'agro','exportar');
 
   let body = '';
   if(state.tab==='resumen') body = agroResumenHtml(company, canCreate, canEdit, canDelete);
-  else if(state.tab==='lotes') body = agroLotsTableHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='lotes') body = state.lotsView==='mapa' ? agroLotsMapHtml(company) : agroLotsTableHtml(company, canCreate, canEdit, canDelete);
   else if(state.tab==='tareas') body = agroTasksTableHtml(company, state, canCreate, canEdit, canDelete);
   else if(state.tab==='ganado') body = agroGanadoHtml(company, canCreate, canEdit, canDelete);
   else if(state.tab==='maquinaria') body = agroMaquinariaHtml(company, canCreate, canEdit, canDelete);
   else if(state.tab==='reportes') body = agroReportsHtml(company, state);
 
-  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores, lotes, tareas de campo, ganado, maquinaria y reportes.', agroHeaderActionsHtml(state, canCreate)) +
+  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores, lotes, tareas de campo, ganado, maquinaria y reportes.', agroHeaderActionsHtml(state, canCreate, canExport)) +
     ui.tabsHtml(AGRO_TABS, state.tab) +
     body;
 
@@ -7196,10 +7250,11 @@ function renderAgro(el, user, company, state){
   wireAgroPage(el, user, company, state, canCreate, canEdit, canDelete);
 }
 
-function agroHeaderActionsHtml(state, canCreate){
-  if(state.tab==='lotes') return canCreate ? '<button class="btn btn-primary" id="agroNewLotBtn">'+icon('plus')+' Nuevo lote</button>' : '';
+function agroHeaderActionsHtml(state, canCreate, canExport){
+  if(state.tab==='lotes') return '<select class="filter-select" id="agroLotsViewSel"><option value="lista" '+(state.lotsView==='lista'?'selected':'')+'>Lista</option><option value="mapa" '+(state.lotsView==='mapa'?'selected':'')+'>Mapa</option></select>'+
+    (canCreate ? '<button class="btn btn-primary" id="agroNewLotBtn">'+icon('plus')+' Nuevo lote</button>' : '');
   if(state.tab==='tareas') return canCreate ? '<button class="btn" id="agroQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="agroNewTaskBtn">'+icon('plus')+' Nueva tarea</button>' : '';
-  if(state.tab==='reportes') return '<select class="filter-select" id="agroReportView"><option value="semana" '+(state.reportView==='semana'?'selected':'')+'>Por semana</option><option value="lote" '+(state.reportView==='lote'?'selected':'')+'>Por lote</option></select>';
+  if(state.tab==='reportes') return '<select class="filter-select" id="agroReportView"><option value="semana" '+(state.reportView==='semana'?'selected':'')+'>Por semana</option><option value="lote" '+(state.reportView==='lote'?'selected':'')+'>Por lote</option></select>'+(canExport?ui.printBtn():'');
   return '';
 }
 
@@ -7268,20 +7323,85 @@ function mountAgroSparklines(el, company){
 }
 
 /* ---------- Lotes ---------- */
+// Suma y resta los movimientos de hacienda que tienen lote de origen/destino
+// cargado, para estimar cuántos animales hay HOY en cada lote. Los movimientos
+// sin lote asignado (la mayoría de los que se cargaron antes de esta función,
+// o cargas rápidas sin ese dato) no se cuentan en ningún lote -- por eso esto
+// es una estimación que depende de que se cargue el lote en cada movimiento,
+// no un inventario físico verificado.
+function agroLotLivestockBalances(company){
+  const moves = G.crud.byCompany(G.DB.agroLivestockMovements, company.id);
+  const balances = {};
+  function add(lotId, category, delta){
+    if(!lotId) return;
+    if(!balances[lotId]) balances[lotId] = {};
+    balances[lotId][category] = (balances[lotId][category]||0) + delta;
+  }
+  moves.forEach(m=>{
+    const qty = parseFloat(m.qty)||0;
+    if(m.movementType==='Nacimiento' || m.movementType==='Compra') add(m.toLotId, m.category, qty);
+    else if(m.movementType==='Venta' || m.movementType==='Muerte') add(m.fromLotId, m.category, -qty);
+    else if(m.movementType==='Traslado'){ add(m.fromLotId, m.category, -qty); add(m.toLotId, m.category, qty); }
+  });
+  return balances;
+}
+function agroLotHeadcount(balances, lotId){
+  const cats = balances[lotId];
+  if(!cats) return 0;
+  return G.util.sum(Object.values(cats), v=>v);
+}
+function agroLotHeadcountDetail(balances, lotId){
+  const cats = balances[lotId];
+  if(!cats) return '';
+  return Object.entries(cats).filter(([,v])=>v!==0).map(([k,v])=>k+': '+fmt.num(v)).join(', ');
+}
 function agroLotsTableHtml(company, canCreate, canEdit, canDelete){
   const rows = G.crud.byCompany(G.DB.agroLots, company.id);
   const totalHa = G.util.sum(rows.filter(r=>r.active!==false), r=>parseFloat(r.areaHa)||0);
+  const balances = agroLotLivestockBalances(company);
   return '<div class="table-card">'+
     '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' lote(s) · '+fmt.num(totalHa,1)+' ha activas en total</div></div>'+
-    '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th>Cultivo / uso</th><th>Estado</th><th></th></tr></thead><tbody>'+
-    (rows.length ? rows.map(r=>'<tr>'+
+    '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th>Cultivo / uso</th><th class="num">Cabezas de ganado</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>{
+      const head = agroLotHeadcount(balances, r.id);
+      const detail = agroLotHeadcountDetail(balances, r.id);
+      return '<tr>'+
       '<td><b>'+esc(r.name)+'</b></td>'+
       '<td class="num mono">'+fmt.num(parseFloat(r.areaHa)||0,1)+'</td>'+
       '<td>'+esc(r.crop||'—')+'</td>'+
+      '<td class="num mono" title="'+esc(detail)+'">'+(head?fmt.num(head):'—')+'</td>'+
       '<td>'+ui.badge(r.active!==false?'good':'neutral', r.active!==false?'Activo':'Inactivo')+'</td>'+
       '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-lot="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-lot="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
-    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('layers','Todavía no cargaste lotes. Empezá agregando el primero.')+'</td></tr>')+
+    '</tr>';
+    }).join('') : '<tr><td colspan="6">'+ui.emptyState('layers','Todavía no cargaste lotes. Empezá agregando el primero.')+'</td></tr>')+
     '</tbody></table></div></div>';
+}
+const LOT_TILE_COLORS = ['#2a78d6','#1baf7a','#eda100','#eb6834','#e87ba4','#4a3aa7','#0f8a8a','#9a6b2f'];
+function lotTileColorFor(crop){
+  if(!crop) return '#7a7f8c';
+  let hash = 0;
+  for(let i=0;i<crop.length;i++) hash = (hash*31 + crop.charCodeAt(i)) >>> 0;
+  return LOT_TILE_COLORS[hash % LOT_TILE_COLORS.length];
+}
+function agroLotsMapHtml(company){
+  const rows = G.crud.byCompany(G.DB.agroLots, company.id);
+  const balances = agroLotLivestockBalances(company);
+  if(!rows.length) return ui.emptyState('layers','Todavía no cargaste lotes. Empezá agregando el primero desde "Lista".');
+  const maxHa = Math.max(1, ...rows.map(r=>parseFloat(r.areaHa)||0));
+  const tiles = rows.map(r=>{
+    const ha = parseFloat(r.areaHa)||0;
+    const color = lotTileColorFor(r.crop);
+    const head = agroLotHeadcount(balances, r.id);
+    const scale = 0.55 + 0.45*(ha/maxHa);
+    return '<div class="lot-tile" style="border-top-color:'+color+';flex-grow:'+Math.max(1,ha)+';min-height:'+Math.round(110*scale)+'px">'+
+      '<div class="lot-tile-name">'+esc(r.name)+'</div>'+
+      '<div class="lot-tile-crop" style="color:'+color+'">'+esc(r.crop||'Sin cultivo asignado')+'</div>'+
+      '<div class="lot-tile-meta">'+fmt.num(ha,1)+' ha'+(head?' · '+fmt.num(head)+' cabezas':'')+'</div>'+
+      (r.active===false?'<div class="lot-tile-inactive">Inactivo</div>':'')+
+    '</div>';
+  }).join('');
+  return '<div class="hint" style="margin-bottom:12px">Cada tarjeta representa un lote (tamaño aproximado a sus hectáreas) y se colorea según el cultivo cargado. Es una primera versión simple del mapa — más adelante se puede sumar un croquis armable a mano.</div>'+
+    '<div class="lot-map-grid">'+tiles+'</div>';
 }
 function openLotForm(company, existing, onDone){
   G.modal.form({
@@ -7361,27 +7481,51 @@ function openTaskForm(company, existing, onDone){
 
 /* ---------- Ganado: inventario + movimientos ---------- */
 function agroLivestockMovementsCardHtml(company, canCreate, canEdit, canDelete){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  const lotName = id=>{ if(!id) return ''; const l=lots.find(x=>x.id===id); return l?l.name:'—'; };
+  const lotCellFor = r=>{
+    if(r.movementType==='Traslado') return (lotName(r.fromLotId)||'Sin lote')+' → '+(lotName(r.toLotId)||'Sin lote');
+    if(r.movementType==='Nacimiento' || r.movementType==='Compra') return lotName(r.toLotId) || '—';
+    if(r.movementType==='Venta' || r.movementType==='Muerte') return lotName(r.fromLotId) || '—';
+    return '—';
+  };
   const rows = G.crud.byCompany(G.DB.agroLivestockMovements, company.id).sort((a,b)=> b.date.localeCompare(a.date));
   const addBtn = canCreate ? '<button class="btn btn-sm" id="agroMoveNewBtn">'+icon('plus')+' Nuevo movimiento</button>' : '';
-  const body = '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Costo</th><th></th></tr></thead><tbody>'+
+  const body = '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Movimiento</th><th>Lote</th><th class="num">Cantidad</th><th class="num">Costo</th><th></th></tr></thead><tbody>'+
     (rows.length ? rows.map(r=>'<tr>'+
       '<td>'+fmt.date(r.date)+'</td><td>'+esc(r.category)+'</td>'+
       '<td>'+ui.badge(r.movementType==='Venta'?'good':r.movementType==='Muerte'?'critical':'neutral', r.movementType)+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(lotCellFor(r))+'</td>'+
       '<td class="num mono">'+fmt.num(r.qty)+'</td><td class="num mono">'+(r.cost?fmt.currency(parseFloat(r.cost)||0):'—')+'</td>'+
       '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-move="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-move="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
-    '</tr>').join('') : '<tr><td colspan="6">'+ui.emptyState('activity','Sin movimientos de hacienda registrados.')+'</td></tr>')+
+    '</tr>').join('') : '<tr><td colspan="7">'+ui.emptyState('activity','Sin movimientos de hacienda registrados.')+'</td></tr>')+
     '</tbody></table></div>';
   return ui.card('Movimientos de hacienda', rows.length?(rows.length+' registro(s)'):'', body, addBtn);
+}
+function agroLivestockByLotCardHtml(company){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  const balances = agroLotLivestockBalances(company);
+  const rows = lots.map(l=>({lot:l, head: agroLotHeadcount(balances, l.id), detail: agroLotHeadcountDetail(balances, l.id)})).filter(r=>r.head!==0);
+  const body = '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Cabezas actuales</th><th>Detalle por categoría</th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr><td><b>'+esc(r.lot.name)+'</b></td><td class="num mono">'+fmt.num(r.head)+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(r.detail||'—')+'</td></tr>').join('')
+      : '<tr><td colspan="3">'+ui.emptyState('users','Cargá movimientos con lote de origen/destino para ver cuántos animales hay en cada lote.')+'</td></tr>')+
+    '</tbody></table></div>';
+  return ui.card('Animales por lote', rows.length?'Estimado a partir de los movimientos con lote cargado':'', body);
 }
 function agroGanadoHtml(company, canCreate, canEdit, canDelete){
   return '<div class="grid-2">'+
     agroLivestockCardHtml(company, canCreate, canEdit, canDelete)+
     agroLivestockMovementsCardHtml(company, canCreate, canEdit, canDelete)+
-  '</div>';
+  '</div>'+
+  agroLivestockByLotCardHtml(company);
 }
 function openMovementForm(company, existing, onDone){
+  const lots = G.crud.byCompany(G.DB.agroLots, company.id);
+  const lotOptions = lots.map(l=>({value:l.id,label:l.name}));
   G.modal.form({
     title: existing?'Editar movimiento de hacienda':'Nuevo movimiento de hacienda', submitLabel: existing?'Guardar cambios':'Agregar',
+    wide:true, cols3:true,
     initial: existing || {date:G.TODAY_ISO},
     onDelete: existing?()=>{ G.crud.removeItem(G.DB.agroLivestockMovements, existing.id); G.toast('Eliminado'); onDone(); }:null,
     fields:[
@@ -7389,15 +7533,19 @@ function openMovementForm(company, existing, onDone){
       {key:'category', label:'Categoría', type:'select', required:true, options:LIVESTOCK_CATEGORIES},
       {key:'movementType', label:'Tipo de movimiento', type:'select', required:true, options:AGRO_MOVEMENT_TYPES},
       {key:'qty', label:'Cantidad de cabezas', type:'number', required:true},
+      {key:'fromLotId', label:'Lote de origen', type:'select', placeholder:'Sin lote / general', options:lotOptions, hint:'Completá esto en Venta, Muerte o Traslado.'},
+      {key:'toLotId', label:'Lote de destino', type:'select', placeholder:'Sin lote / general', options:lotOptions, hint:'Completá esto en Nacimiento, Compra o Traslado.'},
       {key:'cost', label:'Costo / valor ($)', type:'number', step:'0.01', hint:'Si aplica (compra o venta)'},
       {key:'notes', label:'Notas', type:'textarea', fullWidth:true},
     ],
     onSubmit(v){
       if(v.qty<0) return false;
+      if(v.movementType==='Traslado' && v.fromLotId && v.toLotId && v.fromLotId===v.toLotId) return false;
       if(existing){ G.crud.updateItem(G.DB.agroLivestockMovements, existing.id, v); G.logActivity('editó un movimiento de hacienda', v.category, company.id); G.toast('Guardado'); }
       else { G.crud.addItem(G.DB.agroLivestockMovements, Object.assign({companyId:company.id}, v), 'move'); G.logActivity('registró un movimiento de hacienda ('+v.movementType+')', v.category, company.id); G.toast('Movimiento agregado'); }
       onDone();
-    }
+    },
+    errorMessage:'Revisá los datos: si es un traslado, el lote de origen y destino tienen que ser distintos.'
   });
 }
 
@@ -7530,18 +7678,20 @@ function agroReportByWeekHtml(company){
 }
 function agroReportByLoteHtml(company){
   const report = agroLotReport(company);
-  const body = '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th class="num">Tareas</th><th class="num">Costo total</th><th class="num">Costo / ha</th><th>Insumos usados</th><th>Última actividad</th></tr></thead><tbody>'+
+  const balances = agroLotLivestockBalances(company);
+  const body = '<div class="table-wrap"><table><thead><tr><th>Lote</th><th class="num">Hectáreas</th><th class="num">Cabezas</th><th class="num">Tareas</th><th class="num">Costo total</th><th class="num">Costo / ha</th><th>Insumos usados</th><th>Última actividad</th></tr></thead><tbody>'+
     (report.length ? report.map(r=>'<tr>'+
       '<td><b>'+esc(r.lot.name)+'</b></td>'+
       '<td class="num mono">'+(r.lot.areaHa?fmt.num(parseFloat(r.lot.areaHa)||0,1):'—')+'</td>'+
+      '<td class="num mono">'+(r.lot.id?(agroLotHeadcount(balances,r.lot.id)||'—'):'—')+'</td>'+
       '<td class="num mono">'+r.taskCount+'</td>'+
       '<td class="num mono">'+fmt.currency(r.cost)+'</td>'+
       '<td class="num mono">'+(r.costPerHa!=null?fmt.currency(r.costPerHa):'—')+'</td>'+
       '<td class="subtle" style="font-size:12px">'+(Object.keys(r.inputs).length?Object.entries(r.inputs).map(([k,v])=>esc(k)+': '+fmt.num(v,1)).join(', '):'—')+'</td>'+
       '<td class="subtle" style="font-size:12px">'+(r.lastDate?fmt.date(r.lastDate):'—')+'</td>'+
-    '</tr>').join('') : '<tr><td colspan="7">'+ui.emptyState('layers','Cargá lotes y tareas para ver el reporte.')+'</td></tr>')+
+    '</tr>').join('') : '<tr><td colspan="8">'+ui.emptyState('layers','Cargá lotes y tareas para ver el reporte.')+'</td></tr>')+
     '</tbody></table></div>';
-  return ui.card('Costos por lote', 'Costo acumulado, insumos y costo por hectárea de cada lote', body);
+  return ui.card('Costos por lote', 'Costo acumulado, insumos, cabezas de ganado y costo por hectárea de cada lote', body);
 }
 function mountAgroReportCharts(el, company, state){
   if(state.reportView==='lote') return;
@@ -7589,6 +7739,8 @@ function wireAgroPage(el, user, company, state, canCreate, canEdit, canDelete){
   }));
 
   // Lotes
+  const lotsViewSel = document.getElementById('agroLotsViewSel');
+  if(lotsViewSel) lotsViewSel.addEventListener('change', ()=>{ state.lotsView = lotsViewSel.value; rerender(); });
   const newLotBtn = document.getElementById('agroNewLotBtn');
   if(newLotBtn) newLotBtn.addEventListener('click', ()=>openLotForm(company, null, rerender));
   el.querySelectorAll('[data-edit-lot]').forEach(b=>b.addEventListener('click', ()=>{
