@@ -1819,6 +1819,7 @@ function emptyDB(){
     rainfallLog: [], // Módulo Agropecuario: registro climático (mm de lluvia por mes)
     turismoUnits: [], // Módulo Turismo y hotelería: habitaciones / cabañas / unidades
     turismoBookings: [], // Módulo Turismo y hotelería: reservas
+    companyLogos: {}, // {companyId: dataURL} -- logo cargado para la ficha de cada empresa
   };
 }
 
@@ -2051,6 +2052,7 @@ function extractCompanySlice(db, companyId){
     agroLivestockMovements: keep(db.agroLivestockMovements),
     agroMachinery: keep(db.agroMachinery), agroMachineryLog: keep(db.agroMachineryLog),
     turismoUnits: keep(db.turismoUnits), turismoBookings: keep(db.turismoBookings),
+    companyLogos: {[companyId]: (db.companyLogos && db.companyLogos[companyId]) || ''},
   };
 }
 function persist(){ doSync(); }
@@ -2092,15 +2094,20 @@ function moduleEnabledForCompany(company, moduleKey){
   return company && company.modules.includes(flagKey);
 }
 function userCanSeeModule(user, company, moduleKey){
-  if(!user) return false;
-  if(user.role==='SUPER_ADMIN') return true;
-  if(!company) return false;
+  if(!user || !company) return false;
   if(!moduleEnabledForCompany(company, moduleKey)) return false;
-  if(moduleKey==='consultoria') return true; // admins & users can see the collaborative parts (private notes filtered separately)
-  if(user.role==='ADMIN_EMPRESA') return true;
-  // USUARIO_EMPRESA: dashboard/asistente/indicadores/reportes are always visible if company has them; optional modules require explicit assignment
+  // El consultor (Súper Admin) y el administrador de la empresa ven cualquier
+  // módulo que la empresa tenga activo -- ya sea porque lo activó el rubro
+  // solo, o porque el consultor lo prendió a mano en Configuración -- sin
+  // restricciones adicionales. Antes el Súper Admin veía TODOS los módulos
+  // opcionales en cualquier empresa sin importar si estaban activos, lo que
+  // hacía parecer que la activación automática por rubro no funcionaba.
+  if(user.role==='SUPER_ADMIN' || user.role==='ADMIN_EMPRESA') return true;
+  // USUARIO_EMPRESA: dashboard/asistente/indicadores/reportes son siempre
+  // visibles si la empresa los tiene; los módulos opcionales requieren que el
+  // Súper Admin se los haya asignado explícitamente ("Módulos permitidos").
   const mod = G.moduleByKey(moduleKey);
-  if(mod.core) return moduleKey!=='consultoria' ? true : false;
+  if(mod.core) return true;
   const flagKey = mod.pairsWith || moduleKey;
   return user.allowedModules.includes(flagKey);
 }
@@ -2706,6 +2713,24 @@ G.ui.card = function(title, sub, innerHtml, headExtra){
   return '<div class="card"><div class="card-head"><div><div class="card-title">'+esc(title)+'</div>'+(sub?'<div class="card-sub">'+esc(sub)+'</div>':'')+'</div>'+(headExtra||'')+'</div>'+innerHtml+'</div>';
 };
 
+/* ---------- Logo de empresa ----------
+   El logo (si se cargó uno) se guarda como imagen en base64 dentro de
+   G.DB.companyLogos[companyId] -- viaja como parte de los datos operativos de
+   la empresa (mismo mecanismo de guardado que el resto, sin columna nueva en
+   la base). Si no hay logo cargado, se sigue mostrando el círculo de color
+   con las iniciales de siempre. */
+G.companyLogoUrl = function(companyId){
+  return (G.DB && G.DB.companyLogos && G.DB.companyLogos[companyId]) || '';
+};
+G.ui.companyLogoHtml = function(company, opts){
+  opts = opts||{};
+  const size = opts.size||42, fontSize = opts.fontSize||15;
+  const sizeStyle = 'width:'+size+'px;height:'+size+'px;font-size:'+fontSize+'px;';
+  const url = G.companyLogoUrl(company.id);
+  if(url) return '<div class="company-logo" style="'+sizeStyle+'background:#fff;padding:2px;overflow:hidden"><img src="'+esc(url)+'" style="width:100%;height:100%;object-fit:contain;border-radius:8px"/></div>';
+  return '<div class="company-logo" style="'+sizeStyle+'background:'+esc(company.logoColor||'#2a78d6')+'">'+esc(company.initials||'')+'</div>';
+};
+
 G.ui.progressBar = function(pct, tone){
   const p = Math.max(0,Math.min(100,pct));
   return '<div class="progress-track"><div class="progress-fill '+(tone||'')+'" style="width:'+p+'%"></div></div>';
@@ -3152,7 +3177,7 @@ function companyCardHtml(c){
   const kpi = G.companyKPIs(c.id, 'mes');
   return '<div class="company-card" data-open="'+c.id+'">'+
     '<div class="flex justify-between" style="align-items:flex-start">'+
-      '<div class="company-logo" style="background:'+c.logoColor+'">'+esc(c.initials)+'</div>'+
+      ui.companyLogoHtml(c, {size:42, fontSize:15})+
       ui.statusBadgeFor('status', c.status)+
     '</div>'+
     '<div style="margin-top:12px"><div class="card-title" style="font-size:15.5px">'+esc(c.name)+'</div><div class="card-sub">'+esc(c.cuit)+' · '+esc(c.activity)+'</div></div>'+
@@ -5744,7 +5769,9 @@ function renderPerfil(el, user, company){
   el.innerHTML = ui.pageHeader('Perfil de empresa', 'Información general, contactos y presencia digital de '+esc(company.name)+'.',
       canEdit ? '<button class="btn btn-primary" id="perfilEditBtn">'+icon('edit')+' Editar datos generales</button>' : '')+
     '<div class="card" style="margin-bottom:16px"><div class="flex items-center gap-sm" style="align-items:flex-start">'+
-      '<div class="company-logo" style="background:'+esc(company.logoColor||'#2a78d6')+';width:56px;height:56px;font-size:20px">'+esc(company.initials||'')+'</div>'+
+      '<div style="position:relative;flex:none">'+ui.companyLogoHtml(company, {size:56, fontSize:20})+
+        (canEdit?'<button type="button" class="icon-btn" id="perfilLogoBtn" title="Cambiar logo" style="position:absolute;bottom:-8px;right:-8px;width:28px;height:28px;border-radius:50%">'+icon('image')+'</button>':'')+
+      '</div>'+
       '<div style="flex:1"><div class="flex items-center gap-sm">'+
         '<div class="card-title" style="font-size:19px">'+esc(company.name)+'</div>'+ui.statusBadgeFor('status',company.status)+
       '</div><div class="card-sub" style="margin-top:4px">'+esc(company.legalName||'')+' · '+esc(company.cuit||'')+'</div>'+
@@ -5771,6 +5798,8 @@ function renderPerfil(el, user, company){
 
   const editBtn = document.getElementById('perfilEditBtn');
   if(editBtn) editBtn.addEventListener('click', ()=> openCompanyProfileForm(company, ()=>renderPerfil(el,user,company)));
+  const logoBtn = document.getElementById('perfilLogoBtn');
+  if(logoBtn) logoBtn.addEventListener('click', ()=> openCompanyLogoForm(company, ()=>renderPerfil(el,user,company)));
   const editSocialBtn = document.getElementById('perfilEditSocialBtn');
   if(editSocialBtn) editSocialBtn.addEventListener('click', ()=> openSocialForm(company, ()=>renderPerfil(el,user,company)));
   const newContactBtn = document.getElementById('perfilNewContactBtn');
@@ -5836,6 +5865,63 @@ function openCompanyProfileForm(company, onDone){
       G.toast('Perfil actualizado.'+G.autoModulesToastMsg(body.autoEnabledModules));
       onDone();
     }
+  });
+}
+function companyLogoZoneHtml(url){
+  if(!url) return '<span class="subtle" style="font-size:12px">Sin logo cargado. Se muestran las iniciales de la empresa.</span>';
+  return '<img src="'+url+'" style="max-width:160px;max-height:160px;border-radius:10px;display:block;object-fit:contain;background:#fff;padding:8px;border:1px solid var(--border)"/>'+
+    '<button type="button" class="btn btn-sm" id="companyLogoRemoveBtn" style="margin-top:8px">'+icon('trash')+' Quitar logo</button>';
+}
+// Modal chico para subir/quitar el logo -- no usa G.modal.form porque necesita
+// leer el archivo a base64 (FileReader) antes de guardar, igual que el editor
+// de imagen de la pantalla de inicio (Parte 23). Se guarda en
+// G.DB.companyLogos[companyId] y viaja con el resto de los datos operativos
+// de la empresa (mismo persist()/sync de siempre), sin columna nueva en la base.
+function openCompanyLogoForm(company, onDone){
+  let draftLogo = G.companyLogoUrl(company.id);
+  const overlay = G.modal.open(
+    '<div class="modal-head"><div><h3>Logo de la empresa</h3><div class="card-sub">'+esc(company.name)+'</div></div><button class="icon-btn" data-close>'+icon('x')+'</button></div>'+
+    '<div class="modal-body">'+
+      '<div class="field"><label>Imagen del logo</label>'+
+        '<input type="file" id="companyLogoInput" accept="image/*"/>'+
+        '<div class="hint">Se muestra acá y en la ficha de "Empresas". Recomendado: menos de 2 MB, fondo blanco o transparente.</div>'+
+        '<div id="companyLogoZone" style="margin-top:10px">'+companyLogoZoneHtml(draftLogo)+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="modal-foot"><button type="button" class="btn" data-close>Cancelar</button><button type="button" class="btn btn-primary" id="companyLogoSaveBtn">'+icon('check')+' Guardar</button></div>'
+  );
+  overlay.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', G.modal.close));
+  function wireRemoveBtn(){
+    const rb = document.getElementById('companyLogoRemoveBtn');
+    if(rb) rb.addEventListener('click', ()=>{
+      draftLogo = '';
+      const zone = document.getElementById('companyLogoZone');
+      if(zone) zone.innerHTML = companyLogoZoneHtml('');
+    });
+  }
+  wireRemoveBtn();
+  const fileInput = document.getElementById('companyLogoInput');
+  if(fileInput) fileInput.addEventListener('change', ()=>{
+    const file = fileInput.files && fileInput.files[0];
+    if(!file) return;
+    if(file.size > 2*1024*1024){ G.toast('La imagen es muy pesada (máx. 2 MB).'); fileInput.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      draftLogo = reader.result;
+      const zone = document.getElementById('companyLogoZone');
+      if(zone){ zone.innerHTML = companyLogoZoneHtml(draftLogo); wireRemoveBtn(); }
+    };
+    reader.readAsDataURL(file);
+  });
+  const saveBtn = document.getElementById('companyLogoSaveBtn');
+  if(saveBtn) saveBtn.addEventListener('click', ()=>{
+    G.DB.companyLogos = G.DB.companyLogos || {};
+    G.DB.companyLogos[company.id] = draftLogo;
+    G.persist();
+    G.logActivity(draftLogo?'actualizó el logo de la empresa':'quitó el logo de la empresa', company.name, company.id);
+    G.toast(draftLogo?'Logo actualizado':'Logo quitado');
+    G.modal.close();
+    onDone();
   });
 }
 function openSocialForm(company, onDone){

@@ -135,6 +135,7 @@ export interface DbShape {
   agroMachineryLog: any[];
   turismoUnits: any[];
   turismoBookings: any[];
+  companyLogos: Record<string, string>;
 }
 
 function emptyDbShape(): DbShape {
@@ -171,6 +172,7 @@ function emptyDbShape(): DbShape {
     agroMachineryLog: [],
     turismoUnits: [],
     turismoBookings: [],
+    companyLogos: {},
   };
 }
 
@@ -206,6 +208,7 @@ export function mergeIntoDbShape(
     db.finance.expenses.push(...stamp(od.finance?.expenses, cid));
     db.financeCategories[cid] = od.financeCategories || { income: [], expense: [] };
     db.modoWeights[cid] = od.modoWeights || {};
+    db.companyLogos[cid] = od.companyLogo || '';
 
     for (const key of FLAT_KEYS) {
       (db as any)[key].push(...stamp((od as any)[key], cid));
@@ -240,6 +243,7 @@ export function extractOperationalData(dbSlice: {
   finance?: { incomes?: any[]; expenses?: any[] };
   financeCategories?: Record<string, { income: string[]; expense: string[] }>;
   modoWeights?: Record<string, Record<string, number>>;
+  companyLogos?: Record<string, string>;
   consulting?: { diagnostics?: any[]; actions?: any[]; meetings?: any[]; notes?: any[] };
   [key: string]: any;
 }, companyId: string): OperationalData {
@@ -248,6 +252,7 @@ export function extractOperationalData(dbSlice: {
   od.finance.expenses = unstamp(dbSlice.finance?.expenses, companyId) as any[];
   od.financeCategories = (dbSlice.financeCategories && dbSlice.financeCategories[companyId]) || { income: [], expense: [] };
   od.modoWeights = (dbSlice.modoWeights && dbSlice.modoWeights[companyId]) || {};
+  od.companyLogo = (dbSlice.companyLogos && dbSlice.companyLogos[companyId]) || '';
 
   for (const key of FLAT_KEYS) {
     (od as any)[key] = unstamp(dbSlice[key], companyId);

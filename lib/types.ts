@@ -83,6 +83,7 @@ export interface OperationalData {
   agroMachineryLog: any[];
   turismoUnits: any[];
   turismoBookings: any[];
+  companyLogo: string;
 }
 
 export function emptyOperationalData(): OperationalData {
@@ -116,5 +117,6 @@ export function emptyOperationalData(): OperationalData {
     agroMachineryLog: [],
     turismoUnits: [],
     turismoBookings: [],
+    companyLogo: '',
   };
 }
