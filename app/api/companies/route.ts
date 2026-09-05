@@ -3,7 +3,7 @@ import { getSessionFromRequest, newId, todayIso } from '@/lib/auth';
 import { getUserById } from '@/lib/repo';
 import { getPool } from '@/lib/db';
 import { companyRowToClient } from '@/lib/db-shape';
-import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, initialsFor, isAgroCompany, randomLogoColor } from '@/lib/business-rules';
+import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, autoModulesFor, initialsFor, randomLogoColor } from '@/lib/business-rules';
 import { emptyOperationalData } from '@/lib/types';
 import type { CompanyRow } from '@/lib/types';
 
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
   const initials = initialsFor(body.name!);
   const logoColor = randomLogoColor();
   const targetMarginPct = /gastronom|restaur|gourmet/i.test(`${body.sector} ${body.activity}`) ? 65 : 45;
-  const modules: string[] = [];
-  if (isAgroCompany(body.sector!, body.activity!)) modules.push('agro');
+  const autoModules = autoModulesFor(body.sector!, body.activity!, []);
+  const modules: string[] = autoModules.map(r => r.module);
   const today = todayIso();
 
   const operationalData = emptyOperationalData();
@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
   );
 
   const created = rowToCompanyRow(rows[0]);
-  return NextResponse.json({ company: companyRowToClient(created) }, { status: 201 });
+  return NextResponse.json({
+    company: companyRowToClient(created),
+    autoEnabledModules: autoModules.map(r => r.label),
+  }, { status: 201 });
 }
 
 // pg devuelve las columnas jsonb ya parseadas como objetos JS; esta función sólo

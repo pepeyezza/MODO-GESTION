@@ -3,16 +3,18 @@ import { getSessionFromRequest, todayIso } from '@/lib/auth';
 import { getCompanyById, getUserById } from '@/lib/repo';
 import { getPool } from '@/lib/db';
 import { companyRowToClient } from '@/lib/db-shape';
-import { isAgroCompany } from '@/lib/business-rules';
+import { autoModulesFor } from '@/lib/business-rules';
 
 interface PatchCompanyBody {
   name?: string; legalName?: string; cuit?: string; activity?: string; sector?: string;
   city?: string; founded?: number | null; responsible?: string; website?: string; status?: string;
+  billingEstimate?: number; description?: string;
 }
 
 const EDITABLE_COLUMNS: Record<keyof PatchCompanyBody, string> = {
   name: 'name', legalName: 'legal_name', cuit: 'cuit', activity: 'activity', sector: 'sector',
   city: 'city', founded: 'founded', responsible: 'responsible', website: 'website', status: 'status',
+  billingEstimate: 'billing_estimate', description: 'description',
 };
 
 // Editar los datos generales de una empresa -- lo puede hacer el consultor
@@ -49,15 +51,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       values.push(value);
     }
   }
-  // Si el rubro/actividad quedó agropecuario después de este cambio, activar el
-  // módulo "agro" (nunca lo desactiva sola, igual que G.ensureAgroModuleEnabled).
+  // Si el rubro/actividad quedó agropecuario, turístico, etc. después de este
+  // cambio, activar el módulo correspondiente (nunca lo desactiva solo, igual
+  // que G.ensureAutoModules del lado del cliente).
   const nextSector = body.sector ?? existing.sector;
   const nextActivity = body.activity ?? existing.activity;
+  const autoModules = autoModulesFor(nextSector, nextActivity, existing.modules);
   let nextModules = existing.modules;
-  let agroJustEnabled = false;
-  if (isAgroCompany(nextSector, nextActivity) && !existing.modules.includes('agro')) {
-    nextModules = [...existing.modules, 'agro'];
-    agroJustEnabled = true;
+  if (autoModules.length > 0) {
+    nextModules = [...existing.modules, ...autoModules.map(r => r.module)];
     setClauses.push(`modules = $${i++}`);
     values.push(JSON.stringify(nextModules));
   }
@@ -76,5 +78,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     values,
   );
 
-  return NextResponse.json({ company: companyRowToClient(rows[0]), agroJustEnabled });
+  return NextResponse.json({ company: companyRowToClient(rows[0]), autoEnabledModules: autoModules.map(r => r.label) });
 }

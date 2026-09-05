@@ -81,6 +81,8 @@ export interface OperationalData {
   agroLivestockMovements: any[];
   agroMachinery: any[];
   agroMachineryLog: any[];
+  turismoUnits: any[];
+  turismoBookings: any[];
 }
 
 export function emptyOperationalData(): OperationalData {
@@ -112,5 +114,7 @@ export function emptyOperationalData(): OperationalData {
     agroLivestockMovements: [],
     agroMachinery: [],
     agroMachineryLog: [],
+    turismoUnits: [],
+    turismoBookings: [],
   };
 }
