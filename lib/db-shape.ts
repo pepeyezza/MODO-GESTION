@@ -136,6 +136,9 @@ export interface DbShape {
   turismoUnits: any[];
   turismoBookings: any[];
   companyLogos: Record<string, string>;
+  clubMembers: any[];
+  clubCategories: Record<string, string[]>;
+  clubEvents: any[];
 }
 
 function emptyDbShape(): DbShape {
@@ -173,6 +176,9 @@ function emptyDbShape(): DbShape {
     turismoUnits: [],
     turismoBookings: [],
     companyLogos: {},
+    clubMembers: [],
+    clubCategories: {},
+    clubEvents: [],
   };
 }
 
@@ -183,6 +189,7 @@ const FLAT_KEYS = [
   'activityLog', 'livestockInventory', 'rainfallLog',
   'agroLots', 'agroTasks', 'agroLivestockMovements', 'agroMachinery', 'agroMachineryLog',
   'turismoUnits', 'turismoBookings',
+  'clubMembers', 'clubEvents',
 ] as const;
 
 // Arma la respuesta de GET /api/bootstrap a partir de las filas ya autorizadas para
@@ -209,6 +216,7 @@ export function mergeIntoDbShape(
     db.financeCategories[cid] = od.financeCategories || { income: [], expense: [] };
     db.modoWeights[cid] = od.modoWeights || {};
     db.companyLogos[cid] = od.companyLogo || '';
+    db.clubCategories[cid] = od.clubCategories || [];
 
     for (const key of FLAT_KEYS) {
       (db as any)[key].push(...stamp((od as any)[key], cid));
@@ -244,6 +252,7 @@ export function extractOperationalData(dbSlice: {
   financeCategories?: Record<string, { income: string[]; expense: string[] }>;
   modoWeights?: Record<string, Record<string, number>>;
   companyLogos?: Record<string, string>;
+  clubCategories?: Record<string, string[]>;
   consulting?: { diagnostics?: any[]; actions?: any[]; meetings?: any[]; notes?: any[] };
   [key: string]: any;
 }, companyId: string): OperationalData {
@@ -253,6 +262,7 @@ export function extractOperationalData(dbSlice: {
   od.financeCategories = (dbSlice.financeCategories && dbSlice.financeCategories[companyId]) || { income: [], expense: [] };
   od.modoWeights = (dbSlice.modoWeights && dbSlice.modoWeights[companyId]) || {};
   od.companyLogo = (dbSlice.companyLogos && dbSlice.companyLogos[companyId]) || '';
+  od.clubCategories = (dbSlice.clubCategories && dbSlice.clubCategories[companyId]) || [];
 
   for (const key of FLAT_KEYS) {
     (od as any)[key] = unstamp(dbSlice[key], companyId);

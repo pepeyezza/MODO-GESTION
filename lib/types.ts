@@ -84,6 +84,9 @@ export interface OperationalData {
   turismoUnits: any[];
   turismoBookings: any[];
   companyLogo: string;
+  clubMembers: any[];
+  clubCategories: string[];
+  clubEvents: any[];
 }
 
 export function emptyOperationalData(): OperationalData {
@@ -118,5 +121,8 @@ export function emptyOperationalData(): OperationalData {
     turismoUnits: [],
     turismoBookings: [],
     companyLogo: '',
+    clubMembers: [],
+    clubCategories: [],
+    clubEvents: [],
   };
 }

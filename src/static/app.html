@@ -1147,6 +1147,7 @@ G.MODULES = [
   {key:'innovacion',    label:'Innovación',     icon:'bulb',        optional:true, group:'Gestión'},
   {key:'agro',          label:'Agropecuario',   icon:'sun',         optional:true, group:'Gestión'},
   {key:'turismo',       label:'Turismo y hotelería', icon:'compass', optional:true, group:'Gestión'},
+  {key:'club',          label:'Club y socios',  icon:'users',       optional:true, group:'Gestión'},
   {key:'diagnostico',   label:'Diagnóstico',    icon:'activity',    core:true, group:'Estrategia'},
   {key:'planificacion', label:'Planificación',  icon:'target',      core:true, group:'Estrategia'},
   {key:'indicadores',   label:'Indicadores',    icon:'bar-chart',   core:true, group:'Estrategia'},
@@ -1158,7 +1159,7 @@ G.MODULES = [
   {key:'videollamadas', label:'Videollamadas',  icon:'video',       core:true, group:'Sistema'},
   {key:'chat',          label:'Chat',           icon:'message-square', core:true, group:'Sistema'},
 ];
-G.OPTIONAL_MODULE_KEYS = ['finanzas','costos','comercial','rrhh','innovacion','agro','turismo']; // 'clientes' shares the 'comercial' flag
+G.OPTIONAL_MODULE_KEYS = ['finanzas','costos','comercial','rrhh','innovacion','agro','turismo','club']; // 'clientes' shares the 'comercial' flag
 G.moduleByKey = key => G.MODULES.find(m=>m.key===key);
 
 /* ---------- MODO Diagnóstico: dimensions, weights, Índice MODO ----------
@@ -1195,6 +1196,22 @@ G.ACTIONS = ['ver','crear','editar','eliminar','exportar'];
 /* ---------- expense/income category defaults ---------- */
 G.DEFAULT_EXPENSE_CATEGORIES = ['Alquiler','Sueldos','Servicios','Impuestos','Insumos','Marketing','Transporte','Tecnología','Honorarios','Otros'];
 G.DEFAULT_INCOME_CATEGORIES = ['Ventas','Honorarios','Servicios','Intereses','Otros ingresos'];
+// Categorías de socios sugeridas para el Módulo Club y socios -- son solo un
+// punto de partida editable (mismo patrón que las categorías de Finanzas):
+// se cargan la primera vez que se activa el módulo 'club' para una empresa,
+// pero el consultor/admin puede agregar, y no se le pisan si ya cargó otras.
+G.DEFAULT_CLUB_CATEGORIES = ['Activo','Vitalicio','Cadete','Honorario','Adherente'];
+// Se llama cada vez que el módulo 'club' queda activo para una empresa (alta de
+// empresa, edición que dispara auto-activación por rubro, o activación manual
+// desde Configuración) para que el padrón de socios arranque con categorías
+// usables en vez de una lista vacía. Nunca pisa categorías ya cargadas.
+G.ensureClubCategoryDefaults = function(company){
+  if(!company || !Array.isArray(company.modules) || !company.modules.includes('club')) return;
+  G.DB.clubCategories = G.DB.clubCategories || {};
+  if(!G.DB.clubCategories[company.id] || !G.DB.clubCategories[company.id].length){
+    G.DB.clubCategories[company.id] = G.DEFAULT_CLUB_CATEGORIES.slice();
+  }
+};
 
 /* ---------- Rubros de empresa (sector) ---------- */
 G.SECTOR_OPTIONS = ['Servicios profesionales','Comercio minorista','Comercio mayorista','Industria y producción',
@@ -1227,10 +1244,12 @@ function sectorText(company){ return ((company&&company.sector||'')+' '+(company
 G.SECTOR_MODULE_RULES = [
   {module:'agro', label:'Agropecuario', test: s=>/agro|agropecuari|ganader|agr[ií]cola|campo|rural|tambo|forraj/.test(s)},
   {module:'turismo', label:'Turismo y hotelería', test: s=>/turismo|hoteler|hotel|hosped|posada|caba[ñn]a|alojamiento|hostal|resort|camping/.test(s)},
+  {module:'club', label:'Club y socios', test: s=>/club|asociaci[oó]n civil|entidad civil|mutual/.test(s)},
 ];
 function sectorRule(moduleKey){ return G.SECTOR_MODULE_RULES.find(r=>r.module===moduleKey); }
 G.isAgroCompany = function(company){ return sectorRule('agro').test(sectorText(company)); };
 G.isTurismoCompany = function(company){ return sectorRule('turismo').test(sectorText(company)); };
+G.isClubCompany = function(company){ return sectorRule('club').test(sectorText(company)); };
 // Reglas cuyo rubro/actividad matchea y que todavía no están en company.modules.
 G.autoModulesFor = function(company){
   if(!company || !Array.isArray(company.modules)) return [];
@@ -1820,6 +1839,9 @@ function emptyDB(){
     turismoUnits: [], // Módulo Turismo y hotelería: habitaciones / cabañas / unidades
     turismoBookings: [], // Módulo Turismo y hotelería: reservas
     companyLogos: {}, // {companyId: dataURL} -- logo cargado para la ficha de cada empresa
+    clubMembers: [], // Módulo Club y socios: padrón de socios
+    clubCategories: {}, // {companyId: string[]} -- categorías de socios, editables por el consultor/admin (mismo patrón que financeCategories)
+    clubEvents: [], // Módulo Club y socios: calendario de eventos y actividades
   };
 }
 
@@ -2053,6 +2075,8 @@ function extractCompanySlice(db, companyId){
     agroMachinery: keep(db.agroMachinery), agroMachineryLog: keep(db.agroMachineryLog),
     turismoUnits: keep(db.turismoUnits), turismoBookings: keep(db.turismoBookings),
     companyLogos: {[companyId]: (db.companyLogos && db.companyLogos[companyId]) || ''},
+    clubMembers: keep(db.clubMembers), clubEvents: keep(db.clubEvents),
+    clubCategories: {[companyId]: (db.clubCategories && db.clubCategories[companyId]) || []},
   };
 }
 function persist(){ doSync(); }
@@ -3059,7 +3083,11 @@ function renderShell(user, company, route){
       '<div class="brand">'+G.ui.compactMarkHtml(34)+'<div><div class="brand-text">MODO Gestión</div><div class="brand-sub">Software + método + profesionales</div></div></div>'+
       (isSuper ? ('<div class="workspace-switch" data-nav="'+(company?('company/'+company.id+'/dashboard'):'empresas')+'">'+
         '<div class="ws-label">'+(company?'Espacio de trabajo':'Consultor')+'</div>'+
-        '<div class="ws-name">'+esc(company?company.name:'Todas las empresas')+' '+icon('chevron-down','subtle')+'</div></div>') : '')+
+        '<div class="ws-name"><span style="display:flex;align-items:center;gap:6px;min-width:0">'+(company?G.ui.companyLogoHtml(company,{size:20,fontSize:9}):'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(company?company.name:'Todas las empresas')+'</span></span>'+icon('chevron-down','subtle')+'</div></div>') :
+        (company ? ('<div class="workspace-switch" style="cursor:default">'+
+          '<div class="ws-label">Empresa</div>'+
+          '<div class="ws-name" style="justify-content:flex-start;gap:8px">'+G.ui.companyLogoHtml(company,{size:20,fontSize:9})+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(company.name)+'</span></div>'+
+        '</div>') : ''))+
       '<nav class="nav-scroll">'+groups.map(g=>
         '<div class="nav-group"><div class="nav-group-label">'+esc(g.label)+'</div><ul>'+
           g.items.map(it=>'<li class="nav-item '+(it.key===activeKey?'active':'')+'" data-nav="'+it.path+'">'+icon(it.icon)+'<span>'+esc(it.label)+'</span>'+(it.key==='dashboard' && alertCount>0 ? '<span class="nav-badge">'+alertCount+'</span>':'')+'</li>').join('')+
@@ -3241,6 +3269,7 @@ function openCompanyForm(existing){
           throw new Error('No se pudo guardar la empresa.');
         }
         Object.assign(existing, body.company);
+        G.ensureClubCategoryDefaults(existing);
         G.toast('Empresa actualizada.'+G.autoModulesToastMsg(body.autoEnabledModules));
         G.logActivity('actualizó los datos de la empresa', existing.name, existing.id);
       } else {
@@ -3256,6 +3285,7 @@ function openCompanyForm(existing){
         const company = body.company;
         G.DB.companies.push(company);
         G.DB.financeCategories[company.id] = {income: G.DEFAULT_INCOME_CATEGORIES.slice(), expense: G.DEFAULT_EXPENSE_CATEGORIES.slice()};
+        G.ensureClubCategoryDefaults(company);
         G.logActivity('creó una nueva empresa', company.name, company.id);
         G.toast('Empresa creada.'+G.autoModulesToastMsg(body.autoEnabledModules)+' Activá el resto de sus módulos desde Configuración.');
       }
@@ -5199,7 +5229,7 @@ function openNotaForm(company, onDone){
 const G = window.GESTIONA;
 const icon = G.icon, fmt = G.fmt, esc = G.util.escapeHtml, ui = G.ui;
 
-const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh','innovacion','agro','turismo'];
+const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh','innovacion','agro','turismo','club'];
 const PERM_ACTIONS = [
   {key:'crear', label:'Crear'},
   {key:'editar', label:'Editar'},
@@ -5612,6 +5642,7 @@ function renderCompanyConfig(el, user, company, state){
       if(on) mods.add(key); else mods.delete(key);
       G.crud.updateItem(G.DB.companies, company.id, {modules:[...mods]});
       company.modules = [...mods];
+      if(on) G.ensureClubCategoryDefaults(company);
       G.logActivity((on?'activó':'desactivó')+' el módulo '+esc(moduleFlagLabel(key)), company.name, company.id);
       G.toast('Módulo '+(on?'activado':'desactivado'));
       renderCompanyConfig(el,user,company,state);
@@ -5797,9 +5828,15 @@ function renderPerfil(el, user, company){
       canEdit?'<button class="btn btn-sm btn-primary" id="perfilNewContactBtn">'+icon('plus')+' Agregar contacto</button>':'')+'</div>';
 
   const editBtn = document.getElementById('perfilEditBtn');
-  if(editBtn) editBtn.addEventListener('click', ()=> openCompanyProfileForm(company, ()=>renderPerfil(el,user,company)));
+  // Nota: al guardar se llama a G.render() (no solo renderPerfil) porque el
+  // nombre de la empresa también aparece en el sidebar y el breadcrumb del
+  // topbar -- con solo renderPerfil esos dos quedarían con el valor viejo
+  // hasta la próxima navegación.
+  if(editBtn) editBtn.addEventListener('click', ()=> openCompanyProfileForm(company, ()=>G.render()));
   const logoBtn = document.getElementById('perfilLogoBtn');
-  if(logoBtn) logoBtn.addEventListener('click', ()=> openCompanyLogoForm(company, ()=>renderPerfil(el,user,company)));
+  // Mismo motivo: el logo también se muestra en el sidebar (vista empresa) y,
+  // para el consultor, en el selector de espacio de trabajo.
+  if(logoBtn) logoBtn.addEventListener('click', ()=> openCompanyLogoForm(company, ()=>G.render()));
   const editSocialBtn = document.getElementById('perfilEditSocialBtn');
   if(editSocialBtn) editSocialBtn.addEventListener('click', ()=> openSocialForm(company, ()=>renderPerfil(el,user,company)));
   const newContactBtn = document.getElementById('perfilNewContactBtn');
@@ -8283,6 +8320,313 @@ function wireTurismoPage(el, user, company, state, canCreate, canEdit, canDelete
   // Reportes
   const monthInput = document.getElementById('turismoReportMonth');
   if(monthInput) monthInput.addEventListener('change', ()=>{ if(monthInput.value){ state.reportMonth = monthInput.value; rerender(); } });
+}
+
+})();
+</script>
+
+<script>
+/* ============================================================
+   PART 26 — Módulo Club y socios
+   Se activa automáticamente para empresas cuyo rubro/actividad coincide con
+   G.isClubCompany (ver Parte 4: G.SECTOR_MODULE_RULES) -- pensado para clubes
+   y asociaciones civiles. Maneja tres colecciones propias -- socios, categorías
+   de socios (lista editable por empresa, mismo patrón que financeCategories) y
+   eventos/actividades -- y calcula estadísticas de socios totales/por categoría,
+   cuotas al día/atrasadas y evolución en el tiempo. La gestión de "proyectos"
+   del club se resuelve reusando el módulo de Planificación que ya existe (core,
+   siempre disponible) en vez de duplicar esa lógica acá.
+   ============================================================ */
+(function(){
+"use strict";
+const G = window.GESTIONA;
+const icon = G.icon, fmt = G.fmt, esc = G.util.escapeHtml, ui = G.ui;
+
+const CLUB_MEMBER_STATUSES = ['Activo','Baja'];
+const CLUB_FEE_STATUSES = ['Al día','Atrasado'];
+const CLUB_EVENT_TYPES = ['Asamblea','Torneo','Evento social','Reunión','Otro'];
+const CLUB_TABS = [
+  {key:'resumen', label:'Resumen'},
+  {key:'socios', label:'Socios'},
+  {key:'cuotas', label:'Cuotas'},
+  {key:'eventos', label:'Eventos'},
+  {key:'categorias', label:'Categorías'},
+];
+
+function clubFeeTone(s){ return s==='Al día' ? 'good' : s==='Atrasado' ? 'critical' : 'neutral'; }
+function clubEventTone(dateIso){ return dateIso>=G.TODAY_ISO ? 'accent' : 'neutral'; }
+function clubActiveMembers(companyId){ return G.crud.byCompany(G.DB.clubMembers, companyId).filter(m=>m.status!=='Baja'); }
+function clubCategoriesFor(companyId){ return (G.DB.clubCategories && G.DB.clubCategories[companyId]) || []; }
+
+G.pages.club = function(el, user, company){
+  const state = el._clubState || {tab:'resumen', memberSearch:'', memberCategory:'', memberStatus:'', feeFilter:''};
+  el._clubState = state;
+  renderClub(el, user, company, state);
+};
+
+function renderClub(el, user, company, state){
+  const canCreate = G.perm.userCan(user,'club','crear'), canEdit = G.perm.userCan(user,'club','editar'), canDelete = G.perm.userCan(user,'club','eliminar');
+
+  let body = '';
+  if(state.tab==='resumen') body = clubResumenHtml(company);
+  else if(state.tab==='socios') body = clubMembersTableHtml(company, state, canCreate, canEdit, canDelete);
+  else if(state.tab==='cuotas') body = clubFeesHtml(company, state);
+  else if(state.tab==='eventos') body = clubEventsTableHtml(company, state, canCreate, canEdit, canDelete);
+  else if(state.tab==='categorias') body = clubCategoriesHtml(company);
+
+  el.innerHTML = ui.pageHeader('Club y socios', 'Padrón de socios, cuotas, eventos y estadísticas de '+esc(company.name)+'.', clubHeaderActionsHtml(state, canCreate)) +
+    ui.tabsHtml(CLUB_TABS, state.tab) +
+    body;
+
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderClub(el, user, company, state); });
+
+  if(state.tab==='resumen') mountClubCharts(company);
+
+  wireClubPage(el, user, company, state, canCreate, canEdit, canDelete);
+}
+
+function clubHeaderActionsHtml(state, canCreate){
+  if(state.tab==='socios') return canCreate ? '<button class="btn btn-primary" id="clubNewMemberBtn">'+icon('plus')+' Nuevo socio</button>' : '';
+  if(state.tab==='eventos') return canCreate ? '<button class="btn btn-primary" id="clubNewEventBtn">'+icon('plus')+' Nuevo evento</button>' : '';
+  return '';
+}
+
+/* ---------- Resumen ---------- */
+function clubResumenHtml(company){
+  const members = G.crud.byCompany(G.DB.clubMembers, company.id);
+  const active = members.filter(m=>m.status!=='Baja');
+  const overdue = active.filter(m=>m.feeStatus==='Atrasado');
+  const last12 = G.lastMonths(12);
+  const bajasUltimoAnio = members.filter(m=> m.status==='Baja' && m.endDate && m.endDate >= last12[0].key+'-01').length;
+  const events = G.crud.byCompany(G.DB.clubEvents, company.id).filter(e=>e.date>=G.TODAY_ISO).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const kpis = '<div class="kpi-grid">'+
+    ui.kpiCard({icon:'users', label:'Socios activos', value: active.length}) +
+    ui.kpiCard({icon:'banknote', label:'Cuotas atrasadas', value: overdue.length, deltaText: active.length?fmt.pct(overdue.length/active.length*100,0)+' del padrón':'', deltaTone: overdue.length?'down':'flat'}) +
+    ui.kpiCard({icon:'trending-up', label:'Bajas (últimos 12 meses)', value: bajasUltimoAnio}) +
+    ui.kpiCard({icon:'calendar', label:'Próximos eventos', value: events.length}) +
+  '</div>';
+
+  const chartsRow = '<div class="grid-2">'+
+    ui.card('Evolución de socios activos','Últimos 12 meses', '<div id="clubHeadcountChart"></div>')+
+    ui.card('Socios por categoría','', active.length?'<div id="clubCategoryDonut"></div>':ui.emptyState('users','Todavía no hay socios cargados.'))+
+  '</div>';
+
+  const upcomingBody = '<div class="table-wrap"><table><thead><tr><th>Evento</th><th>Tipo</th><th>Fecha</th><th>Lugar</th></tr></thead><tbody>'+
+    (events.length ? events.slice(0,5).map(e=>'<tr>'+
+      '<td><b>'+esc(e.title)+'</b></td>'+
+      '<td>'+ui.badge('neutral', e.type)+'</td>'+
+      '<td>'+fmt.date(e.date)+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(e.location||'—')+'</td>'+
+    '</tr>').join('') : '<tr><td colspan="4">'+ui.emptyState('calendar','Sin eventos próximos.')+'</td></tr>')+
+    '</tbody></table></div>';
+
+  return kpis + chartsRow + '<div style="margin-top:16px">'+ui.card('Próximos eventos', events.length?('Siguientes '+Math.min(5,events.length)+' evento(s)'):'', upcomingBody)+'</div>';
+}
+function mountClubCharts(company){
+  const active = clubActiveMembers(company.id);
+  const months = G.lastMonths(12);
+  const headcountData = months.map(mo=>({x:mo.label, y: G.crud.byCompany(G.DB.clubMembers, company.id).filter(m=> m.joinDate && m.joinDate<=mo.key+'-28' && (m.status!=='Baja' || !m.endDate || m.endDate>mo.key+'-28')).length}));
+  const headcountEl = document.getElementById('clubHeadcountChart');
+  if(headcountEl) G.charts.line(headcountEl, [{name:'Socios activos', data:headcountData}], {showArea:true, money:false});
+  const donutEl = document.getElementById('clubCategoryDonut');
+  if(donutEl && active.length){
+    const byCat = G.util.groupBy(active, m=>m.category||'Sin categoría');
+    G.charts.donut(donutEl, Object.entries(byCat).map(([cat,arr])=>({label:cat, value:arr.length})), {money:false});
+  }
+}
+
+/* ---------- Socios ---------- */
+function clubMembersTableHtml(company, state, canCreate, canEdit, canDelete){
+  const cats = clubCategoriesFor(company.id);
+  let rows = G.crud.byCompany(G.DB.clubMembers, company.id).sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  if(state.memberSearch) rows = rows.filter(r=> (r.name||'').toLowerCase().includes(state.memberSearch.toLowerCase()));
+  if(state.memberCategory) rows = rows.filter(r=>r.category===state.memberCategory);
+  if(state.memberStatus) rows = rows.filter(r=>r.status===state.memberStatus);
+  return '<div class="table-card">'+
+    '<div class="table-toolbar">'+
+      '<div class="search-input">'+icon('search')+'<input type="text" placeholder="Buscar socio..." value="'+esc(state.memberSearch)+'" id="clubMemberSearch"/></div>'+
+      '<select class="filter-select" id="clubMemberCategoryFilter"><option value="">Todas las categorías</option>'+cats.map(c=>'<option value="'+esc(c)+'" '+(state.memberCategory===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
+      '<select class="filter-select" id="clubMemberStatusFilter"><option value="">Todos los estados</option>'+CLUB_MEMBER_STATUSES.map(s=>'<option value="'+s+'" '+(state.memberStatus===s?'selected':'')+'>'+s+'</option>').join('')+'</select>'+
+      '<div class="subtle" style="margin-left:auto;font-size:12.5px">'+rows.length+' socio(s)</div>'+
+    '</div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Categoría</th><th>Estado</th><th>Fecha de alta</th><th>Cuota</th><th>Contacto</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td><b>'+esc(r.name)+'</b></td>'+
+      '<td>'+ui.badge('neutral', r.category||'—')+'</td>'+
+      '<td>'+ui.statusBadgeFor('status', r.status)+'</td>'+
+      '<td>'+(r.joinDate?fmt.date(r.joinDate):'—')+'</td>'+
+      '<td>'+ui.badge(clubFeeTone(r.feeStatus), r.feeStatus||'—')+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(r.phone||r.email||'—')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-member="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-member="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="7">'+ui.emptyState('users','Todavía no cargaste socios. Empezá agregando el primero.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openClubMemberForm(company, existing, onDone){
+  const cats = clubCategoriesFor(company.id);
+  G.modal.form({
+    title: existing?'Editar socio':'Nuevo socio', submitLabel: existing?'Guardar cambios':'Agregar',
+    wide:true,
+    initial: existing || {status:'Activo', joinDate:G.TODAY_ISO, feeStatus:'Al día'},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.clubMembers, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'name', label:'Nombre y apellido', required:true, placeholder:'Ej: Juan Pérez'},
+      {key:'category', label:'Categoría', type:'select', required: cats.length>0, options:cats, placeholder: cats.length?'Seleccionar...':'Cargá primero una categoría'},
+      {key:'status', label:'Estado', type:'select', required:true, options:CLUB_MEMBER_STATUSES},
+      {key:'joinDate', label:'Fecha de alta', type:'date', required:true},
+      {key:'endDate', label:'Fecha de baja (si corresponde)', type:'date'},
+      {key:'phone', label:'Teléfono', placeholder:'+54 9 11 0000-0000'},
+      {key:'email', label:'Email', type:'email'},
+      {key:'feeStatus', label:'Estado de cuota', type:'select', required:true, options:CLUB_FEE_STATUSES},
+      {key:'lastPaymentDate', label:'Último pago', type:'date'},
+      {key:'notes', label:'Observaciones', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(existing){ G.crud.updateItem(G.DB.clubMembers, existing.id, v); G.logActivity('editó los datos de un socio', v.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.clubMembers, Object.assign({companyId:company.id}, v), 'member'); G.logActivity('agregó un nuevo socio', v.name, company.id); G.toast('Socio agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Cuotas ---------- */
+function clubFeesHtml(company, state){
+  const active = clubActiveMembers(company.id);
+  const overdue = active.filter(m=>m.feeStatus==='Atrasado');
+  let rows = active.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  if(state.feeFilter) rows = rows.filter(r=>r.feeStatus===state.feeFilter);
+  const kpis = '<div class="kpi-grid" style="margin-bottom:16px">'+
+    ui.kpiCard({icon:'users', label:'Socios activos', value: active.length}) +
+    ui.kpiCard({icon:'check-circle', label:'Al día', value: active.length-overdue.length}) +
+    ui.kpiCard({icon:'alert-triangle', label:'Atrasados', value: overdue.length}) +
+    ui.kpiCard({icon:'percent', label:'% al día', value: active.length? fmt.pct((active.length-overdue.length)/active.length*100,0) : '—'}) +
+  '</div>';
+  const table = '<div class="table-card">'+
+    '<div class="table-toolbar">'+
+      '<select class="filter-select" id="clubFeeFilter"><option value="">Todos los estados de cuota</option>'+CLUB_FEE_STATUSES.map(s=>'<option value="'+s+'" '+(state.feeFilter===s?'selected':'')+'>'+s+'</option>').join('')+'</select>'+
+      '<div class="subtle" style="margin-left:auto;font-size:12.5px">'+rows.length+' socio(s)</div>'+
+    '</div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Categoría</th><th>Estado de cuota</th><th>Último pago</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td><b>'+esc(r.name)+'</b></td>'+
+      '<td>'+ui.badge('neutral', r.category||'—')+'</td>'+
+      '<td>'+ui.badge(clubFeeTone(r.feeStatus), r.feeStatus||'—')+'</td>'+
+      '<td>'+(r.lastPaymentDate?fmt.date(r.lastPaymentDate):'—')+'</td>'+
+      '<td><button class="btn btn-sm" data-toggle-fee="'+r.id+'">'+(r.feeStatus==='Atrasado'?'Marcar cuota pagada':'Marcar atrasado')+'</button></td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('banknote','No hay socios activos para mostrar.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+  return kpis+table;
+}
+
+/* ---------- Eventos ---------- */
+function clubEventsTableHtml(company, state, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.clubEvents, company.id).sort((a,b)=> a.date.localeCompare(b.date));
+  return '<div class="table-card">'+
+    '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' evento(s)</div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Evento</th><th>Tipo</th><th>Fecha</th><th>Lugar</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td><b>'+esc(r.title)+'</b>'+(r.description?'<br><span class="subtle" style="font-size:11px">'+esc(r.description)+'</span>':'')+'</td>'+
+      '<td>'+ui.badge('neutral', r.type)+'</td>'+
+      '<td>'+ui.badge(clubEventTone(r.date), fmt.date(r.date))+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(r.location||'—')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-event="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-event="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('calendar','Todavía no hay eventos cargados.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openClubEventForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar evento':'Nuevo evento', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {date:G.TODAY_ISO, type:'Reunión'},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.clubEvents, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'title', label:'Título', required:true, placeholder:'Ej: Asamblea anual'},
+      {key:'type', label:'Tipo', type:'select', required:true, options:CLUB_EVENT_TYPES},
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'location', label:'Lugar', placeholder:'Ej: Sede social'},
+      {key:'description', label:'Descripción', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(existing){ G.crud.updateItem(G.DB.clubEvents, existing.id, v); G.logActivity('editó un evento del club', v.title, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.clubEvents, Object.assign({companyId:company.id}, v), 'event'); G.logActivity('cargó un nuevo evento del club', v.title, company.id); G.toast('Evento agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Categorías ---------- */
+function clubCategoriesHtml(company){
+  const cats = clubCategoriesFor(company.id);
+  return ui.card('Categorías de socios', 'Usalas para agrupar el padrón (ej. tipo de membresía, franja etaria o disciplina) -- las creás vos, a tu medida.',
+    '<div class="stack-10">'+
+      (cats.length ? cats.map(c=>'<div class="flex justify-between items-center"><span class="badge badge-neutral">'+esc(c)+'</span></div>').join('') : ui.emptyState('users','Todavía no hay categorías cargadas.'))+
+    '</div>'+
+    '<form id="clubAddCategoryForm" class="flex gap-sm" style="margin-top:14px"><input type="text" name="newCat" placeholder="Nueva categoría..." style="flex:1"/><button class="btn btn-sm btn-primary" type="submit">'+icon('plus')+'</button></form>'
+  );
+}
+
+/* ---------- Wiring de toda la página ---------- */
+function wireClubPage(el, user, company, state, canCreate, canEdit, canDelete){
+  const rerender = ()=> renderClub(el, user, company, state);
+
+  // Socios
+  const searchEl = document.getElementById('clubMemberSearch');
+  if(searchEl) searchEl.addEventListener('input', G.util.debounce(()=>{ state.memberSearch=searchEl.value; rerender(); }, 250));
+  const catFilter = document.getElementById('clubMemberCategoryFilter');
+  if(catFilter) catFilter.addEventListener('change', ()=>{ state.memberCategory=catFilter.value; rerender(); });
+  const statusFilter = document.getElementById('clubMemberStatusFilter');
+  if(statusFilter) statusFilter.addEventListener('change', ()=>{ state.memberStatus=statusFilter.value; rerender(); });
+  const newMemberBtn = document.getElementById('clubNewMemberBtn');
+  if(newMemberBtn) newMemberBtn.addEventListener('click', ()=> openClubMemberForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-member]').forEach(b=>b.addEventListener('click', ()=>{
+    openClubMemberForm(company, G.DB.clubMembers.find(r=>r.id===b.getAttribute('data-edit-member')), rerender);
+  }));
+  el.querySelectorAll('[data-del-member]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar socio', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.clubMembers, b.getAttribute('data-del-member'));
+      G.logActivity('eliminó un socio', company.name, company.id);
+      G.toast('Socio eliminado'); rerender();
+    }});
+  }));
+
+  // Cuotas
+  const feeFilter = document.getElementById('clubFeeFilter');
+  if(feeFilter) feeFilter.addEventListener('change', ()=>{ state.feeFilter=feeFilter.value; rerender(); });
+  el.querySelectorAll('[data-toggle-fee]').forEach(b=>b.addEventListener('click', ()=>{
+    const id = b.getAttribute('data-toggle-fee');
+    const member = G.DB.clubMembers.find(r=>r.id===id);
+    if(!member) return;
+    const nowPaid = member.feeStatus==='Atrasado';
+    const patch = nowPaid ? {feeStatus:'Al día', lastPaymentDate:G.TODAY_ISO} : {feeStatus:'Atrasado'};
+    G.crud.updateItem(G.DB.clubMembers, id, patch);
+    G.logActivity(nowPaid?'registró el pago de la cuota de un socio':'marcó atrasada la cuota de un socio', member.name, company.id);
+    G.toast(nowPaid?'Cuota marcada como pagada':'Cuota marcada como atrasada');
+    rerender();
+  }));
+
+  // Eventos
+  const newEventBtn = document.getElementById('clubNewEventBtn');
+  if(newEventBtn) newEventBtn.addEventListener('click', ()=> openClubEventForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-event]').forEach(b=>b.addEventListener('click', ()=>{
+    openClubEventForm(company, G.DB.clubEvents.find(r=>r.id===b.getAttribute('data-edit-event')), rerender);
+  }));
+  el.querySelectorAll('[data-del-event]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar evento', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.clubEvents, b.getAttribute('data-del-event'));
+      G.logActivity('eliminó un evento del club', company.name, company.id);
+      G.toast('Evento eliminado'); rerender();
+    }});
+  }));
+
+  // Categorías
+  const addCatForm = document.getElementById('clubAddCategoryForm');
+  if(addCatForm) addCatForm.addEventListener('submit', e=>{
+    e.preventDefault();
+    const val = addCatForm.newCat.value.trim();
+    if(!val) return;
+    G.DB.clubCategories = G.DB.clubCategories || {};
+    const cats = G.DB.clubCategories[company.id] = G.DB.clubCategories[company.id] || [];
+    if(!cats.includes(val)){ cats.push(val); G.persist(); G.toast('Categoría agregada'); rerender(); }
+  });
 }
 
 })();
