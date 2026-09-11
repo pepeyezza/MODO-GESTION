@@ -139,6 +139,9 @@ export interface DbShape {
   clubMembers: any[];
   clubCategories: Record<string, string[]>;
   clubEvents: any[];
+  contentProductions: any[];
+  contentProductionCosts: any[];
+  contentEvents: any[];
 }
 
 function emptyDbShape(): DbShape {
@@ -179,6 +182,9 @@ function emptyDbShape(): DbShape {
     clubMembers: [],
     clubCategories: {},
     clubEvents: [],
+    contentProductions: [],
+    contentProductionCosts: [],
+    contentEvents: [],
   };
 }
 
@@ -190,6 +196,7 @@ const FLAT_KEYS = [
   'agroLots', 'agroTasks', 'agroLivestockMovements', 'agroMachinery', 'agroMachineryLog',
   'turismoUnits', 'turismoBookings',
   'clubMembers', 'clubEvents',
+  'contentProductions', 'contentProductionCosts', 'contentEvents',
 ] as const;
 
 // Arma la respuesta de GET /api/bootstrap a partir de las filas ya autorizadas para

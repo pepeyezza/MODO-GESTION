@@ -87,6 +87,9 @@ export interface OperationalData {
   clubMembers: any[];
   clubCategories: string[];
   clubEvents: any[];
+  contentProductions: any[];
+  contentProductionCosts: any[];
+  contentEvents: any[];
 }
 
 export function emptyOperationalData(): OperationalData {
@@ -124,5 +127,8 @@ export function emptyOperationalData(): OperationalData {
     clubMembers: [],
     clubCategories: [],
     clubEvents: [],
+    contentProductions: [],
+    contentProductionCosts: [],
+    contentEvents: [],
   };
 }

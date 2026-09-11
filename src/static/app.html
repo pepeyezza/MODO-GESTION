@@ -1148,6 +1148,7 @@ G.MODULES = [
   {key:'agro',          label:'Agropecuario',   icon:'sun',         optional:true, group:'Gestión'},
   {key:'turismo',       label:'Turismo y hotelería', icon:'compass', optional:true, group:'Gestión'},
   {key:'club',          label:'Club y socios',  icon:'users',       optional:true, group:'Gestión'},
+  {key:'produccion',    label:'Producción y eventos', icon:'video', optional:true, group:'Gestión'},
   {key:'diagnostico',   label:'Diagnóstico',    icon:'activity',    core:true, group:'Estrategia'},
   {key:'planificacion', label:'Planificación',  icon:'target',      core:true, group:'Estrategia'},
   {key:'indicadores',   label:'Indicadores',    icon:'bar-chart',   core:true, group:'Estrategia'},
@@ -1159,7 +1160,7 @@ G.MODULES = [
   {key:'videollamadas', label:'Videollamadas',  icon:'video',       core:true, group:'Sistema'},
   {key:'chat',          label:'Chat',           icon:'message-square', core:true, group:'Sistema'},
 ];
-G.OPTIONAL_MODULE_KEYS = ['finanzas','costos','comercial','rrhh','innovacion','agro','turismo','club']; // 'clientes' shares the 'comercial' flag
+G.OPTIONAL_MODULE_KEYS = ['finanzas','costos','comercial','rrhh','innovacion','agro','turismo','club','produccion']; // 'clientes' shares the 'comercial' flag
 G.moduleByKey = key => G.MODULES.find(m=>m.key===key);
 
 /* ---------- MODO Diagnóstico: dimensions, weights, Índice MODO ----------
@@ -1216,7 +1217,7 @@ G.ensureClubCategoryDefaults = function(company){
 /* ---------- Rubros de empresa (sector) ---------- */
 G.SECTOR_OPTIONS = ['Servicios profesionales','Comercio minorista','Comercio mayorista','Industria y producción',
   'Gastronomía','Construcción','Salud','Educación','Tecnología / Software','Agro y producción primaria',
-  'Logística y transporte','Turismo y hotelería','Club o asociación civil','Otro'];
+  'Logística y transporte','Turismo y hotelería','Club o asociación civil','Productora de contenidos / Centro cultural','Otro'];
 // Devuelve las opciones de rubro para un <select>, agregando cualquier valor ya cargado
 // en empresas existentes que no esté en la lista por defecto (para no perder datos al editar).
 G.sectorOptionsList = function(){
@@ -1245,11 +1246,13 @@ G.SECTOR_MODULE_RULES = [
   {module:'agro', label:'Agropecuario', test: s=>/agro|agropecuari|ganader|agr[ií]cola|campo|rural|tambo|forraj/.test(s)},
   {module:'turismo', label:'Turismo y hotelería', test: s=>/turismo|hoteler|hotel|hosped|posada|caba[ñn]a|alojamiento|hostal|resort|camping/.test(s)},
   {module:'club', label:'Club y socios', test: s=>/club|asociaci[oó]n civil|entidad civil|mutual/.test(s)},
+  {module:'produccion', label:'Producción y eventos', test: s=>/productora|audiovisual|centro cultural|cultural|multimedia|\bcine\b|teatral|teatro/.test(s)},
 ];
 function sectorRule(moduleKey){ return G.SECTOR_MODULE_RULES.find(r=>r.module===moduleKey); }
 G.isAgroCompany = function(company){ return sectorRule('agro').test(sectorText(company)); };
 G.isTurismoCompany = function(company){ return sectorRule('turismo').test(sectorText(company)); };
 G.isClubCompany = function(company){ return sectorRule('club').test(sectorText(company)); };
+G.isContentProductionCompany = function(company){ return sectorRule('produccion').test(sectorText(company)); };
 // Reglas cuyo rubro/actividad matchea y que todavía no están en company.modules.
 G.autoModulesFor = function(company){
   if(!company || !Array.isArray(company.modules)) return [];
@@ -1842,6 +1845,9 @@ function emptyDB(){
     clubMembers: [], // Módulo Club y socios: padrón de socios
     clubCategories: {}, // {companyId: string[]} -- categorías de socios, editables por el consultor/admin (mismo patrón que financeCategories)
     clubEvents: [], // Módulo Club y socios: calendario de eventos y actividades
+    contentProductions: [], // Módulo Producción y eventos: producciones audiovisuales (presupuesto, estado)
+    contentProductionCosts: [], // Módulo Producción y eventos: costos cargados contra una producción
+    contentEvents: [], // Módulo Producción y eventos: agenda de funciones/eventos con venta de entradas
   };
 }
 
@@ -2077,6 +2083,8 @@ function extractCompanySlice(db, companyId){
     companyLogos: {[companyId]: (db.companyLogos && db.companyLogos[companyId]) || ''},
     clubMembers: keep(db.clubMembers), clubEvents: keep(db.clubEvents),
     clubCategories: {[companyId]: (db.clubCategories && db.clubCategories[companyId]) || []},
+    contentProductions: keep(db.contentProductions), contentProductionCosts: keep(db.contentProductionCosts),
+    contentEvents: keep(db.contentEvents),
   };
 }
 function persist(){ doSync(); }
@@ -5229,7 +5237,7 @@ function openNotaForm(company, onDone){
 const G = window.GESTIONA;
 const icon = G.icon, fmt = G.fmt, esc = G.util.escapeHtml, ui = G.ui;
 
-const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh','innovacion','agro','turismo','club'];
+const PERM_MODULES = ['finanzas','costos','comercial','clientes','rrhh','innovacion','agro','turismo','club','produccion'];
 const PERM_ACTIONS = [
   {key:'crear', label:'Crear'},
   {key:'editar', label:'Editar'},
@@ -8627,6 +8635,344 @@ function wireClubPage(el, user, company, state, canCreate, canEdit, canDelete){
     const cats = G.DB.clubCategories[company.id] = G.DB.clubCategories[company.id] || [];
     if(!cats.includes(val)){ cats.push(val); G.persist(); G.toast('Categoría agregada'); rerender(); }
   });
+}
+
+})();
+</script>
+
+<script>
+/* ============================================================
+   PART 27 — Módulo Producción y eventos
+   Pensado para productoras de contenido audiovisual y centros culturales. Se
+   activa automáticamente para empresas cuyo rubro/actividad coincide con
+   G.isContentProductionCompany (ver Parte 4: G.SECTOR_MODULE_RULES), y también
+   se puede activar a mano desde Configuración como cualquier módulo opcional.
+   Maneja tres colecciones propias: producciones audiovisuales (con presupuesto),
+   los costos que se cargan contra cada producción, y la agenda de eventos con
+   venta de entradas -- pensadas para cubrir tanto el lado "productora" (costear
+   un rodaje) como el lado "centro cultural" (agenda + entradas) del mismo rubro.
+   ============================================================ */
+(function(){
+"use strict";
+const G = window.GESTIONA;
+const icon = G.icon, fmt = G.fmt, esc = G.util.escapeHtml, ui = G.ui;
+
+const CONTENT_PRODUCTION_TYPES = ['Cortometraje','Largometraje','Publicidad','Documental','Serie','Videoclip','Contenido para redes','Otro'];
+const CONTENT_PRODUCTION_STATUSES = ['Preproducción','Rodaje','Posproducción','Entregada','Cancelada'];
+const CONTENT_COST_CATEGORIES = ['Equipamiento y alquiler','Talento y actuación','Locaciones','Postproducción y edición','Arte y vestuario','Catering y viáticos','Otros'];
+const CONTENT_EVENT_TYPES = ['Función teatral','Concierto','Proyección','Taller','Exposición','Presentación','Otro'];
+const CONTENT_EVENT_STATUSES = ['Programado','Realizado','Cancelado'];
+const PRODUCCION_TABS = [
+  {key:'resumen', label:'Resumen'},
+  {key:'producciones', label:'Producciones'},
+  {key:'costos', label:'Costos'},
+  {key:'eventos', label:'Eventos y entradas'},
+];
+
+function productionStatusTone(s){
+  const map = {'Preproducción':'neutral','Rodaje':'accent','Posproducción':'accent','Entregada':'good','Cancelada':'critical'};
+  return map[s]||'neutral';
+}
+function eventStatusTone(s){
+  const map = {'Programado':'accent','Realizado':'good','Cancelado':'critical'};
+  return map[s]||'neutral';
+}
+function budgetUsageTone(pct){ return pct>100 ? 'critical' : pct>=80 ? 'warning' : 'good'; }
+function productionSpent(companyId, productionId){
+  return G.util.sum(G.crud.byCompany(G.DB.contentProductionCosts, companyId).filter(c=>c.productionId===productionId), c=>parseFloat(c.amount)||0);
+}
+function productionName(productions, id){ const p = productions.find(x=>x.id===id); return p?p.name:'Sin producción'; }
+function eventRevenue(e){ return (parseFloat(e.ticketPrice)||0)*(parseFloat(e.ticketsSold)||0); }
+
+G.pages.produccion = function(el, user, company){
+  const state = el._produccionState || {tab:'resumen', costProductionFilter:'', costCategoryFilter:''};
+  el._produccionState = state;
+  renderProduccion(el, user, company, state);
+};
+
+function renderProduccion(el, user, company, state){
+  const canCreate = G.perm.userCan(user,'produccion','crear'), canEdit = G.perm.userCan(user,'produccion','editar'), canDelete = G.perm.userCan(user,'produccion','eliminar');
+
+  let body = '';
+  if(state.tab==='resumen') body = produccionResumenHtml(company);
+  else if(state.tab==='producciones') body = productionsTableHtml(company, canCreate, canEdit, canDelete);
+  else if(state.tab==='costos') body = productionCostsTableHtml(company, state, canCreate, canEdit, canDelete);
+  else if(state.tab==='eventos') body = contentEventsTableHtml(company, canCreate, canEdit, canDelete);
+
+  el.innerHTML = ui.pageHeader('Producción y eventos', 'Producciones audiovisuales, costos, agenda de eventos y venta de entradas de '+esc(company.name)+'.', produccionHeaderActionsHtml(state, canCreate)) +
+    ui.tabsHtml(PRODUCCION_TABS, state.tab) +
+    body;
+
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderProduccion(el, user, company, state); });
+
+  if(state.tab==='resumen') mountProduccionCharts(company);
+
+  wireProduccionPage(el, user, company, state, canCreate, canEdit, canDelete);
+}
+
+function produccionHeaderActionsHtml(state, canCreate){
+  if(state.tab==='producciones') return canCreate ? '<button class="btn btn-primary" id="prodNewProductionBtn">'+icon('plus')+' Nueva producción</button>' : '';
+  if(state.tab==='costos') return canCreate ? '<button class="btn btn-primary" id="prodNewCostBtn">'+icon('plus')+' Nuevo costo</button>' : '';
+  if(state.tab==='eventos') return canCreate ? '<button class="btn btn-primary" id="prodNewEventBtn">'+icon('plus')+' Nuevo evento</button>' : '';
+  return '';
+}
+
+/* ---------- Resumen ---------- */
+function produccionResumenHtml(company){
+  const productions = G.crud.byCompany(G.DB.contentProductions, company.id);
+  const active = productions.filter(p=> !['Entregada','Cancelada'].includes(p.status));
+  const totalBudget = G.util.sum(active, p=>parseFloat(p.budget)||0);
+  const totalSpent = G.util.sum(active, p=>productionSpent(company.id, p.id));
+  const events = G.crud.byCompany(G.DB.contentEvents, company.id);
+  const thisMonth = G.TODAY_ISO.slice(0,7);
+  const eventsThisMonth = events.filter(e=> e.status!=='Cancelado' && (e.date||'').slice(0,7)===thisMonth);
+  const ticketsThisMonth = G.util.sum(eventsThisMonth, e=>parseFloat(e.ticketsSold)||0);
+  const revenueThisMonth = G.util.sum(eventsThisMonth, e=>eventRevenue(e));
+  const upcoming = events.filter(e=>e.status!=='Cancelado' && e.date>=G.TODAY_ISO).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const kpis = '<div class="kpi-grid">'+
+    ui.kpiCard({icon:'video', label:'Producciones activas', value: active.length}) +
+    ui.kpiCard({icon:'wallet', label:'Gastado', value: fmt.currency(totalSpent,{compact:true}), deltaText: 'de '+fmt.currency(totalBudget,{compact:true})+' presupuestado', deltaTone: totalSpent>totalBudget?'down':'flat'}) +
+    ui.kpiCard({icon:'users', label:'Entradas vendidas (mes)', value: fmt.num(ticketsThisMonth,0)}) +
+    ui.kpiCard({icon:'banknote', label:'Ingresos por entradas (mes)', value: fmt.currency(revenueThisMonth,{compact:true})}) +
+  '</div>';
+
+  const chartsRow = '<div class="grid-2">'+
+    ui.card('Gasto por producción','Producciones activas', active.length?'<div id="prodSpendHbar"></div>':ui.emptyState('video','Todavía no hay producciones activas.'))+
+    ui.card('Ingresos por entradas','Últimos 6 meses', '<div id="prodRevenueChart"></div>')+
+  '</div>';
+
+  const upcomingBody = '<div class="table-wrap"><table><thead><tr><th>Evento</th><th>Tipo</th><th>Fecha</th><th class="num">Entradas</th><th>Estado</th></tr></thead><tbody>'+
+    (upcoming.length ? upcoming.slice(0,5).map(e=>'<tr>'+
+      '<td><b>'+esc(e.title)+'</b></td>'+
+      '<td>'+ui.badge('neutral', e.type)+'</td>'+
+      '<td>'+fmt.date(e.date)+'</td>'+
+      '<td class="num mono">'+fmt.num(parseFloat(e.ticketsSold)||0,0)+(e.capacity?(' / '+fmt.num(parseFloat(e.capacity)||0,0)):'')+'</td>'+
+      '<td>'+ui.badge(eventStatusTone(e.status), e.status)+'</td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('calendar','Sin eventos próximos.')+'</td></tr>')+
+    '</tbody></table></div>';
+
+  return kpis + chartsRow + '<div style="margin-top:16px">'+ui.card('Próximos eventos', upcoming.length?('Siguientes '+Math.min(5,upcoming.length)+' evento(s)'):'', upcomingBody)+'</div>';
+}
+function mountProduccionCharts(company){
+  const productions = G.crud.byCompany(G.DB.contentProductions, company.id);
+  const active = productions.filter(p=> !['Entregada','Cancelada'].includes(p.status));
+  const hbarEl = document.getElementById('prodSpendHbar');
+  if(hbarEl && active.length){
+    G.charts.hbar(hbarEl, active.map(p=>{
+      const spent = productionSpent(company.id, p.id);
+      return {label:p.name, value: spent, color: spent>(parseFloat(p.budget)||0) ? 'var(--critical)' : undefined};
+    }));
+  }
+  const months = G.lastMonths(6);
+  const events = G.crud.byCompany(G.DB.contentEvents, company.id).filter(e=>e.status!=='Cancelado');
+  const revenueData = months.map(mo=>({x:mo.label, y: G.util.sum(events.filter(e=>(e.date||'').slice(0,7)===mo.key), e=>eventRevenue(e))}));
+  const revenueEl = document.getElementById('prodRevenueChart');
+  if(revenueEl) G.charts.line(revenueEl, [{name:'Ingresos por entradas', data:revenueData}], {showArea:true});
+}
+
+/* ---------- Producciones ---------- */
+function productionsTableHtml(company, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.contentProductions, company.id).sort((a,b)=> (b.startDate||'').localeCompare(a.startDate||''));
+  return '<div class="table-card">'+
+    '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' producción(es)</div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Producción</th><th>Tipo</th><th>Cliente</th><th>Estado</th><th class="num">Presupuesto</th><th class="num">Gastado</th><th>% usado</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>{
+      const spent = productionSpent(company.id, r.id);
+      const budget = parseFloat(r.budget)||0;
+      const pct = budget ? (spent/budget*100) : (spent>0?100:0);
+      return '<tr>'+
+      '<td><b>'+esc(r.name)+'</b></td>'+
+      '<td>'+esc(r.type||'—')+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(r.client||'—')+'</td>'+
+      '<td>'+ui.badge(productionStatusTone(r.status), r.status)+'</td>'+
+      '<td class="num mono">'+(budget?fmt.currency(budget,{compact:true}):'—')+'</td>'+
+      '<td class="num mono">'+fmt.currency(spent,{compact:true})+'</td>'+
+      '<td>'+ui.badge(budgetUsageTone(pct), fmt.num(pct,0)+'%')+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-production="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-production="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>';
+    }).join('') : '<tr><td colspan="8">'+ui.emptyState('video','Todavía no cargaste producciones. Empezá agregando la primera.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openProductionForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar producción':'Nueva producción', submitLabel: existing?'Guardar cambios':'Agregar',
+    wide:true,
+    initial: existing || {status:'Preproducción', startDate:G.TODAY_ISO},
+    onDelete: existing?()=>{
+      G.crud.removeItem(G.DB.contentProductions, existing.id);
+      G.DB.contentProductionCosts = G.DB.contentProductionCosts.filter(c=>c.productionId!==existing.id);
+      G.persist();
+      G.toast('Eliminada'); onDone();
+    }:null,
+    fields:[
+      {key:'name', label:'Nombre de la producción', required:true, placeholder:'Ej: Spot institucional 2026'},
+      {key:'type', label:'Tipo', type:'select', required:true, options:CONTENT_PRODUCTION_TYPES},
+      {key:'client', label:'Cliente / Anunciante', placeholder:'Nombre del cliente (opcional)'},
+      {key:'status', label:'Estado', type:'select', required:true, options:CONTENT_PRODUCTION_STATUSES},
+      {key:'budget', label:'Presupuesto ($)', type:'number', step:'0.01'},
+      {key:'startDate', label:'Fecha de inicio', type:'date'},
+      {key:'deliveryDate', label:'Fecha de entrega', type:'date'},
+      {key:'notes', label:'Notas', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(v.budget<0) return false;
+      if(existing){ G.crud.updateItem(G.DB.contentProductions, existing.id, v); G.logActivity('editó una producción', v.name, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.contentProductions, Object.assign({companyId:company.id}, v), 'prod'); G.logActivity('cargó una nueva producción', v.name, company.id); G.toast('Producción agregada'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Costos de producción ---------- */
+function productionCostsTableHtml(company, state, canCreate, canEdit, canDelete){
+  const productions = G.crud.byCompany(G.DB.contentProductions, company.id);
+  let rows = G.crud.byCompany(G.DB.contentProductionCosts, company.id).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  if(state.costProductionFilter) rows = rows.filter(r=>r.productionId===state.costProductionFilter);
+  if(state.costCategoryFilter) rows = rows.filter(r=>r.category===state.costCategoryFilter);
+  const total = G.util.sum(rows, r=>parseFloat(r.amount)||0);
+  return '<div class="table-card">'+
+    '<div class="table-toolbar">'+
+      '<select class="filter-select" id="prodCostProductionFilter"><option value="">Todas las producciones</option>'+productions.map(p=>'<option value="'+p.id+'" '+(state.costProductionFilter===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select>'+
+      '<select class="filter-select" id="prodCostCategoryFilter"><option value="">Todas las categorías</option>'+CONTENT_COST_CATEGORIES.map(c=>'<option value="'+c+'" '+(state.costCategoryFilter===c?'selected':'')+'>'+c+'</option>').join('')+'</select>'+
+      '<div class="subtle" style="margin-left:auto;font-size:12.5px">'+rows.length+' registro(s) · Total <b class="mono">'+fmt.currency(total)+'</b></div>'+
+    '</div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Producción</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th class="num">Importe</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td>'+esc(productionName(productions, r.productionId))+'</td>'+
+      '<td><b>'+esc(r.concept)+'</b></td>'+
+      '<td>'+ui.badge('neutral', r.category)+'</td>'+
+      '<td>'+(r.date?fmt.date(r.date):'—')+'</td>'+
+      '<td class="num mono">'+fmt.currency(parseFloat(r.amount)||0)+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-cost="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-cost="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="6">'+ui.emptyState('wallet','Todavía no hay costos cargados.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openProductionCostForm(company, existing, onDone){
+  const productions = G.crud.byCompany(G.DB.contentProductions, company.id);
+  const prodOptions = productions.map(p=>({value:p.id,label:p.name}));
+  G.modal.form({
+    title: existing?'Editar costo':'Nuevo costo', submitLabel: existing?'Guardar cambios':'Agregar',
+    initial: existing || {date:G.TODAY_ISO},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.contentProductionCosts, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'productionId', label:'Producción', type:'select', required:true, options:prodOptions, placeholder: prodOptions.length?'Seleccionar...':'Cargá primero una producción'},
+      {key:'concept', label:'Concepto', required:true, placeholder:'Ej: Alquiler de cámara'},
+      {key:'category', label:'Categoría', type:'select', required:true, options:CONTENT_COST_CATEGORIES},
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'amount', label:'Importe ($)', type:'number', step:'0.01', required:true, placeholder:'0'},
+    ],
+    onSubmit(v){
+      if(v.amount<=0) return false;
+      if(existing){ G.crud.updateItem(G.DB.contentProductionCosts, existing.id, v); G.logActivity('editó un costo de producción', v.concept, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.contentProductionCosts, Object.assign({companyId:company.id}, v), 'pcost'); G.logActivity('cargó un costo de producción', v.concept, company.id); G.toast('Costo agregado'); }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Eventos y entradas ---------- */
+function contentEventsTableHtml(company, canCreate, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.contentEvents, company.id).sort((a,b)=> a.date.localeCompare(b.date));
+  return '<div class="table-card">'+
+    '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' evento(s)</div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Evento</th><th>Tipo</th><th>Fecha</th><th>Lugar</th><th class="num">Entradas</th><th class="num">Ingreso</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td><b>'+esc(r.title)+'</b>'+(r.time?' <span class="subtle" style="font-size:11px">('+esc(r.time)+')</span>':'')+'</td>'+
+      '<td>'+ui.badge('neutral', r.type)+'</td>'+
+      '<td>'+fmt.date(r.date)+'</td>'+
+      '<td class="subtle" style="font-size:12px">'+esc(r.location||'—')+'</td>'+
+      '<td class="num mono">'+fmt.num(parseFloat(r.ticketsSold)||0,0)+(r.capacity?(' / '+fmt.num(parseFloat(r.capacity)||0,0)):'')+'</td>'+
+      '<td class="num mono">'+fmt.currency(eventRevenue(r),{compact:true})+'</td>'+
+      '<td>'+ui.badge(eventStatusTone(r.status), r.status)+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-event="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-event="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="8">'+ui.emptyState('calendar','Todavía no hay eventos cargados.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function openContentEventForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar evento':'Nuevo evento', submitLabel: existing?'Guardar cambios':'Agregar',
+    wide:true,
+    initial: existing || {date:G.TODAY_ISO, status:'Programado', ticketsSold:0},
+    onDelete: existing?()=>{ G.crud.removeItem(G.DB.contentEvents, existing.id); G.toast('Eliminado'); onDone(); }:null,
+    fields:[
+      {key:'title', label:'Título', required:true, placeholder:'Ej: Función de teatro - Sábado'},
+      {key:'type', label:'Tipo', type:'select', required:true, options:CONTENT_EVENT_TYPES},
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'time', label:'Horario', placeholder:'Ej: 20:00hs'},
+      {key:'location', label:'Lugar', placeholder:'Ej: Sala principal'},
+      {key:'capacity', label:'Capacidad (entradas disponibles)', type:'number'},
+      {key:'ticketPrice', label:'Precio de entrada ($)', type:'number', step:'0.01'},
+      {key:'ticketsSold', label:'Entradas vendidas', type:'number'},
+      {key:'status', label:'Estado', type:'select', required:true, options:CONTENT_EVENT_STATUSES},
+      {key:'notes', label:'Notas', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      if(v.capacity<0 || v.ticketPrice<0 || v.ticketsSold<0) return false;
+      if(v.capacity && v.ticketsSold>v.capacity) return false;
+      if(existing){ G.crud.updateItem(G.DB.contentEvents, existing.id, v); G.logActivity('editó un evento', v.title, company.id); G.toast('Guardado'); }
+      else { G.crud.addItem(G.DB.contentEvents, Object.assign({companyId:company.id}, v), 'cevent'); G.logActivity('cargó un nuevo evento', v.title, company.id); G.toast('Evento agregado'); }
+      onDone();
+    },
+    errorMessage:'Revisá los números cargados: no pueden ser negativos, y las entradas vendidas no pueden superar la capacidad.'
+  });
+}
+
+/* ---------- Wiring de toda la página ---------- */
+function wireProduccionPage(el, user, company, state, canCreate, canEdit, canDelete){
+  const rerender = ()=> renderProduccion(el, user, company, state);
+
+  // Producciones
+  const newProductionBtn = document.getElementById('prodNewProductionBtn');
+  if(newProductionBtn) newProductionBtn.addEventListener('click', ()=> openProductionForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-production]').forEach(b=>b.addEventListener('click', ()=>{
+    openProductionForm(company, G.DB.contentProductions.find(r=>r.id===b.getAttribute('data-edit-production')), rerender);
+  }));
+  el.querySelectorAll('[data-del-production]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar producción', desc:'También se eliminan los costos cargados contra esta producción.', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      const id = b.getAttribute('data-del-production');
+      G.crud.removeItem(G.DB.contentProductions, id);
+      G.DB.contentProductionCosts = G.DB.contentProductionCosts.filter(c=>c.productionId!==id);
+      G.persist();
+      G.logActivity('eliminó una producción', company.name, company.id);
+      G.toast('Producción eliminada'); rerender();
+    }});
+  }));
+
+  // Costos
+  const costProdFilter = document.getElementById('prodCostProductionFilter');
+  if(costProdFilter) costProdFilter.addEventListener('change', ()=>{ state.costProductionFilter=costProdFilter.value; rerender(); });
+  const costCatFilter = document.getElementById('prodCostCategoryFilter');
+  if(costCatFilter) costCatFilter.addEventListener('change', ()=>{ state.costCategoryFilter=costCatFilter.value; rerender(); });
+  const newCostBtn = document.getElementById('prodNewCostBtn');
+  if(newCostBtn) newCostBtn.addEventListener('click', ()=>{
+    if(!G.crud.byCompany(G.DB.contentProductions, company.id).length){ G.toast('Cargá primero una producción en "Producciones".'); return; }
+    openProductionCostForm(company, null, rerender);
+  });
+  el.querySelectorAll('[data-edit-cost]').forEach(b=>b.addEventListener('click', ()=>{
+    openProductionCostForm(company, G.DB.contentProductionCosts.find(r=>r.id===b.getAttribute('data-edit-cost')), rerender);
+  }));
+  el.querySelectorAll('[data-del-cost]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar costo', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.contentProductionCosts, b.getAttribute('data-del-cost'));
+      G.logActivity('eliminó un costo de producción', company.name, company.id);
+      G.toast('Costo eliminado'); rerender();
+    }});
+  }));
+
+  // Eventos
+  const newEventBtn = document.getElementById('prodNewEventBtn');
+  if(newEventBtn) newEventBtn.addEventListener('click', ()=> openContentEventForm(company, null, rerender));
+  el.querySelectorAll('[data-edit-event]').forEach(b=>b.addEventListener('click', ()=>{
+    openContentEventForm(company, G.DB.contentEvents.find(r=>r.id===b.getAttribute('data-edit-event')), rerender);
+  }));
+  el.querySelectorAll('[data-del-event]').forEach(b=>b.addEventListener('click', ()=>{
+    G.modal.confirm({title:'Eliminar evento', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.contentEvents, b.getAttribute('data-del-event'));
+      G.logActivity('eliminó un evento', company.name, company.id);
+      G.toast('Evento eliminado'); rerender();
+    }});
+  }));
 }
 
 })();

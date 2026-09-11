@@ -35,6 +35,11 @@ export function isClubCompany(sector: string, activity: string): boolean {
   return /club|asociaci[oó]n civil|entidad civil|mutual/.test(s);
 }
 
+export function isContentProductionCompany(sector: string, activity: string): boolean {
+  const s = `${sector || ''} ${activity || ''}`.toLowerCase();
+  return /productora|audiovisual|centro cultural|cultural|multimedia|\bcine\b|teatral|teatro/.test(s);
+}
+
 // Reglas de rubro -> módulo que se activa solo (además de los que el consultor
 // prenda a mano desde Configuración). Mantener en sync con G.SECTOR_MODULE_RULES
 // de app.html si se agrega un rubro nuevo. Nunca desactiva un módulo ya activo.
@@ -47,6 +52,7 @@ export const SECTOR_MODULE_RULES: SectorModuleRule[] = [
   { module: 'agro', label: 'Agropecuario', test: isAgroCompany },
   { module: 'turismo', label: 'Turismo y hotelería', test: isTurismoCompany },
   { module: 'club', label: 'Club y socios', test: isClubCompany },
+  { module: 'produccion', label: 'Producción y eventos', test: isContentProductionCompany },
 ];
 
 // Devuelve las reglas cuyo rubro/actividad matchea y que todavía no están en
