@@ -2742,8 +2742,9 @@ G.ui.emptyState = function(iconName, text, actionHtml){
   return '<div class="empty-state">'+icon(iconName||'info','icon')+'<div>'+esc(text)+'</div>'+(actionHtml||'')+'</div>';
 };
 
-G.ui.pageHeader = function(title, desc, actionsHtml){
-  return '<div class="page-head"><div><h1 class="page-title">'+esc(title)+'</h1>'+(desc?'<p class="page-desc">'+desc+'</p>':'')+'</div>'+(actionsHtml?'<div class="page-actions">'+actionsHtml+'</div>':'')+'</div>';
+G.ui.pageHeader = function(title, desc, actionsHtml, logoHtml){
+  const titleBlock = '<div><h1 class="page-title">'+esc(title)+'</h1>'+(desc?'<p class="page-desc">'+desc+'</p>':'')+'</div>';
+  return '<div class="page-head">'+(logoHtml?('<div style="display:flex;align-items:center;gap:14px;min-width:0">'+logoHtml+titleBlock+'</div>'):titleBlock)+(actionsHtml?'<div class="page-actions">'+actionsHtml+'</div>':'')+'</div>';
 };
 
 G.ui.infoCallout = function(text){
@@ -3117,6 +3118,7 @@ function renderShell(user, company, route){
       (isSuper && company ? '<div class="consultant-strip"><span>'+icon('eye')+'</span><span>Modo consultor — viendo el espacio de <b>'+esc(company.name)+'</b></span><button data-nav="empresas" style="margin-left:auto">Volver a Empresas</button></div>' : '')+
       '<header class="topbar">'+
         '<button class="icon-btn hamburger" id="hamburgerBtn">'+icon('grid')+'</button>'+
+        (company ? '<div style="flex:none">'+G.ui.companyLogoHtml(company,{size:30,fontSize:11})+'</div>' : '')+
         '<div class="crumb">'+crumbParts.join('<span class="subtle">/</span>')+'</div>'+
         '<div class="topbar-actions">'+
           '<button class="icon-btn" id="themeToggleBtn" title="Cambiar tema"></button>'+
@@ -3505,7 +3507,7 @@ function renderCompanyDashboard(el, user, company, period){
   const indicators = G.DB.indicators.filter(i=>i.companyId===company.id);
   const pendingActions = G.DB.consulting.actions.filter(a=>a.companyId===company.id && a.status!=='Completada');
 
-  let html = ui.pageHeader('Centro de Gestión — '+company.name, company.activity, G.periodToggleHtml(period)+ui.printBtn());
+  let html = ui.pageHeader('Centro de Gestión — '+company.name, company.activity, G.periodToggleHtml(period)+ui.printBtn(), G.ui.companyLogoHtml(company, {size:52, fontSize:18}));
 
   const badAlerts = alerts.filter(a=>a.level!=='good');
 
