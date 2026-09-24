@@ -1818,6 +1818,9 @@ function emptyDB(){
     users: [],
     finance: {incomes: [], expenses: []},
     financeCategories: {},
+    investments: [], // Inversiones: línea aparte de los egresos (Flujo de Fondos)
+    cashFlowScenarios: [], // Simulador de escenarios de Flujo de Fondos (uno o más por empresa)
+    cashFlowOpeningBalance: {}, // {companyId: number} -- saldo inicial del Flujo de Fondos real
     costsFixed: [],
     costsVariable: [],
     products: [],
@@ -1831,6 +1834,8 @@ function emptyDB(){
     indicators: [],
     modoDiagnostics: [],
     modoWeights: {}, // {companyId: {dimKey: weight}} — override opcional de la ponderación por defecto
+    swot: {}, // {companyId: {fortalezas:[], oportunidades:[], debilidades:[], amenazas:[]}} — Matriz FODA de Diagnóstico
+    canvas: {}, // {companyId: {segmentos, propuesta, canales, relacion, ingresos, recursos, actividades, socios, costos}} — Canvas de Modelo de Negocio de Diagnóstico
     consulting: {diagnostics: [], actions: [], meetings: [], notes: []},
     helpRequests: [], // MODO Red: Empresa -> Necesidad -> Solicitud de asistencia -> Profesional -> Intervención -> Resultado
     videoCalls: [], // Videollamadas: consultor<->empresa y administrador<->colaboradores
@@ -2069,6 +2074,10 @@ function extractCompanySlice(db, companyId){
     innovation: keep(db.innovation), objectives: keep(db.objectives), indicators: keep(db.indicators),
     modoDiagnostics: keep(db.modoDiagnostics),
     modoWeights: {[companyId]: (db.modoWeights && db.modoWeights[companyId]) || {}},
+    swot: {[companyId]: (db.swot && db.swot[companyId]) || {fortalezas:[],oportunidades:[],debilidades:[],amenazas:[]}},
+    canvas: {[companyId]: (db.canvas && db.canvas[companyId]) || {segmentos:'',propuesta:'',canales:'',relacion:'',ingresos:'',recursos:'',actividades:'',socios:'',costos:''}},
+    investments: keep(db.investments), cashFlowScenarios: keep(db.cashFlowScenarios),
+    cashFlowOpeningBalance: {[companyId]: (db.cashFlowOpeningBalance && db.cashFlowOpeningBalance[companyId]) || 0},
     consulting: {
       diagnostics: keep(db.consulting.diagnostics), actions: keep(db.consulting.actions),
       meetings: keep(db.consulting.meetings), notes: keep(db.consulting.notes),
@@ -3740,27 +3749,38 @@ G.ui.tabsHtml = tabsHtml; G.ui.wireTabs = wireTabs;
    FINANZAS
    ============================================================ */
 G.pages.finanzas = function(el, user, company){
-  const state = el._finState || {tab:'resumen', period:'mes', filterCat:'', search:''};
+  const state = el._finState || {tab:'resumen', period:'mes', filterCat:'', search:'', flow:{view:'real', months:12, scenarioId:null}};
   el._finState = state;
   renderFinanzas(el, user, company, state);
 };
+
+const FINANZAS_TABS = [
+  {key:'resumen',label:'Resumen'},{key:'ingresos',label:'Ingresos'},{key:'egresos',label:'Egresos'},
+  {key:'inversiones',label:'Inversiones'},{key:'categorias',label:'Categorías'},{key:'flujo',label:'Flujo de Fondos'},
+];
 
 function renderFinanzas(el, user, company, state){
   const canEdit = G.perm.userCan(user, 'finanzas', 'editar');
   const canDelete = G.perm.userCan(user, 'finanzas', 'eliminar');
   const canCreate = G.perm.userCan(user, 'finanzas', 'crear');
+  state.flow = state.flow || {view:'real', months:12, scenarioId:null};
+
+  if(state.tab==='flujo') return renderFlujoFondos(el, user, company, state, canCreate, canEdit, canDelete);
 
   let body = '';
   if(state.tab==='resumen') body = finResumenHtml(company, state.period);
   else if(state.tab==='ingresos') body = finTableHtml(company, 'income', state, canCreate, canEdit, canDelete);
   else if(state.tab==='egresos') body = finTableHtml(company, 'expense', state, canCreate, canEdit, canDelete);
+  else if(state.tab==='inversiones') body = finInversionesTableHtml(company, canEdit, canDelete);
   else if(state.tab==='categorias') body = finCategoriesHtml(company);
 
   const canExportFin = G.perm.userCan(user, 'finanzas', 'exportar');
+  const newBtnLabel = state.tab==='egresos' ? 'Nuevo egreso' : state.tab==='inversiones' ? 'Nueva inversión' : 'Nuevo ingreso';
   el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.',
       state.tab==='resumen' ? G.periodToggleHtml(state.period)+(canExportFin?ui.printBtn():'') :
-      (canCreate ? '<button class="btn" id="finImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn" id="finQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="finNewBtn">'+icon('plus')+' '+(state.tab==='egresos'?'Nuevo egreso':'Nuevo ingreso')+'</button>' : '')) +
-    tabsHtml([{key:'resumen',label:'Resumen'},{key:'ingresos',label:'Ingresos'},{key:'egresos',label:'Egresos'},{key:'categorias',label:'Categorías'}], state.tab) +
+      state.tab==='categorias' ? '' :
+      (canCreate ? (state.tab!=='inversiones' ? '<button class="btn" id="finImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn" id="finQuickBtn">'+icon('mic')+' Carga rápida</button>' : '')+'<button class="btn btn-primary" id="finNewBtn">'+icon('plus')+' '+newBtnLabel+'</button>' : '')) +
+    tabsHtml(FINANZAS_TABS, state.tab) +
     body;
 
   wireTabs(el, tab=>{ state.tab=tab; renderFinanzas(el, user, company, state); });
@@ -3768,6 +3788,10 @@ function renderFinanzas(el, user, company, state){
   if(state.tab==='resumen'){
     mountFinResumenCharts(company, state.period);
     el.querySelectorAll('[data-period]').forEach(b=>b.addEventListener('click', ()=>{ state.period=b.getAttribute('data-period'); renderFinanzas(el,user,company,state); }));
+  } else if(state.tab==='inversiones'){
+    wireFinInversiones(el, user, company, state, canEdit, canDelete);
+    const newBtn = document.getElementById('finNewBtn');
+    if(newBtn) newBtn.addEventListener('click', ()=> openInversionForm(company, null, ()=>renderFinanzas(el,user,company,state)));
   } else if(state.tab==='ingresos' || state.tab==='egresos'){
     const kind = state.tab==='ingresos' ? 'income' : 'expense';
     wireFinTable(el, user, company, kind, state, canEdit, canDelete);
@@ -3933,6 +3957,332 @@ function wireCategoriesForm(el, company, onDone){
       const cats = G.DB.financeCategories[company.id];
       if(!cats[kind].includes(val)){ cats[kind].push(val); G.persist(); G.toast('Categoría agregada'); onDone(); }
     });
+  });
+}
+
+/* ---------- Inversiones -- línea aparte de los egresos, a pedido del consultor,
+   para poder analizarlas por separado en el Flujo de Fondos. ---------- */
+const INVESTMENT_CATEGORIES = ['Maquinaria y equipos','Tecnología','Infraestructura y obra','Vehículos','Mobiliario','Otro'];
+function finInversionesTableHtml(company, canEdit, canDelete){
+  const rows = G.crud.byCompany(G.DB.investments, company.id).sort((a,b)=> b.date.localeCompare(a.date));
+  const total = G.util.sum(rows, r=>r.amount);
+  return '<div class="table-card">'+
+    '<div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+rows.length+' inversión(es) · Total <b class="mono">'+fmt.currency(total)+'</b></div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="num">Importe</th><th></th></tr></thead><tbody>'+
+    (rows.length ? rows.map(r=>'<tr>'+
+      '<td>'+fmt.date(r.date)+'</td>'+
+      '<td>'+esc(r.concept)+(r.notes?'<br><span class="subtle" style="font-size:11px">'+esc(r.notes)+'</span>':'')+'</td>'+
+      '<td>'+ui.badge('accent', r.category)+'</td>'+
+      '<td class="num mono" style="color:var(--accent)">'+fmt.currency(r.amount)+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-inv="'+r.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-inv="'+r.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('trending-up','Todavía no hay inversiones cargadas. Se muestran como línea aparte en el Flujo de Fondos.')+'</td></tr>')+
+    '</tbody></table></div></div>';
+}
+function wireFinInversiones(el, user, company, state){
+  el.querySelectorAll('[data-edit-inv]').forEach(b=>b.addEventListener('click', ()=>{
+    const item = G.DB.investments.find(x=>x.id===b.getAttribute('data-edit-inv'));
+    openInversionForm(company, item, ()=>renderFinanzas(el,user,company,state));
+  }));
+  el.querySelectorAll('[data-del-inv]').forEach(b=>b.addEventListener('click', ()=>{
+    const id = b.getAttribute('data-del-inv');
+    G.modal.confirm({title:'Eliminar inversión', desc:'Esta acción no se puede deshacer.', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      G.crud.removeItem(G.DB.investments, id);
+      G.logActivity('eliminó una inversión', company.name, company.id);
+      G.toast('Inversión eliminada'); renderFinanzas(el,user,company,state);
+    }});
+  }));
+}
+function openInversionForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar inversión':'Nueva inversión', submitLabel: existing?'Guardar cambios':'Registrar',
+    initial: existing || {date:G.TODAY_ISO, category:INVESTMENT_CATEGORIES[0]},
+    onDelete: existing ? ()=>{ G.crud.removeItem(G.DB.investments, existing.id); G.logActivity('eliminó una inversión', company.name, company.id); G.toast('Inversión eliminada'); onDone(); } : null,
+    fields:[
+      {key:'date', label:'Fecha', type:'date', required:true},
+      {key:'concept', label:'Concepto', required:true, placeholder:'Ej: Compra de maquinaria nueva'},
+      {key:'category', label:'Categoría', type:'select', required:true, options:INVESTMENT_CATEGORIES},
+      {key:'amount', label:'Importe', type:'number', step:'0.01', required:true, placeholder:'0'},
+      {key:'notes', label:'Observaciones', type:'textarea', fullWidth:true, placeholder:'Notas adicionales (opcional)'},
+    ],
+    onSubmit(v){
+      if(v.amount<=0) return false;
+      if(existing){
+        G.crud.updateItem(G.DB.investments, existing.id, v);
+        G.logActivity('editó una inversión', v.concept, company.id);
+        G.toast('Cambios guardados');
+      } else {
+        G.crud.addItem(G.DB.investments, Object.assign({companyId:company.id}, v), 'inv');
+        G.logActivity('registró una nueva inversión', v.concept, company.id);
+        G.toast('Inversión registrada');
+      }
+      onDone();
+    }
+  });
+}
+
+/* ---------- Flujo de Fondos ----------
+   Dos herramientas complementarias, a pedido explícito del consultor:
+   1) "Flujo real": se arma solo a partir de los ingresos/egresos/inversiones ya
+      cargados en Finanzas -- lo único editable acá es el saldo inicial.
+   2) "Simulador de escenarios": flujos de fondos hipotéticos/diversos para
+      analizar inversiones a futuro antes de decidirlas -- cada escenario tiene
+      su propio saldo inicial, horizonte en meses y una lista de supuestos
+      (ingresos, egresos o inversiones proyectadas, únicas o mensuales).
+   En ambas, las inversiones son siempre una línea aparte de los egresos. */
+function monthLabelFromYYYYMM(ym, offset){
+  if(!ym) return null;
+  const parts = ym.split('-').map(Number);
+  const d = new Date(parts[0], (parts[1]-1)+(offset||0), 1);
+  return G.fmt.monthLabel(d.getFullYear(), d.getMonth());
+}
+function cashFlowRealSeries(companyId, monthsCount){
+  const months = G.lastMonths(monthsCount);
+  let acc = (G.DB.cashFlowOpeningBalance && G.DB.cashFlowOpeningBalance[companyId]) || 0;
+  return months.map(mo=>{
+    const inc = G.util.sum(G.DB.finance.incomes.filter(x=>x.companyId===companyId && x.date.startsWith(mo.key)), x=>x.amount);
+    const exp = G.util.sum(G.DB.finance.expenses.filter(x=>x.companyId===companyId && x.date.startsWith(mo.key)), x=>x.amount);
+    const inv = G.util.sum((G.DB.investments||[]).filter(x=>x.companyId===companyId && x.date.startsWith(mo.key)), x=>x.amount);
+    const saldoInicial = acc;
+    const resultado = inc-exp-inv;
+    acc = acc+resultado;
+    return Object.assign({}, mo, {income:inc, expense:exp, investment:inv, result:resultado, saldoInicial, saldoFinal:acc});
+  });
+}
+function scenarioProjection(scenario){
+  const startBalance = Number(scenario.startBalance)||0;
+  const horizon = Math.max(1, Math.min(60, Math.round(Number(scenario.horizonMonths))||12));
+  let acc = startBalance;
+  const out = [];
+  for(let m=1; m<=horizon; m++){
+    let inc=0, exp=0, inv=0;
+    (scenario.items||[]).forEach(it=>{
+      const startMonth = Math.max(1, Number(it.month)||1);
+      const applies = it.frequency==='mensual' ? m>=startMonth : m===startMonth;
+      if(!applies) return;
+      const amt = Number(it.amount)||0;
+      if(it.type==='ingreso') inc+=amt;
+      else if(it.type==='egreso') exp+=amt;
+      else if(it.type==='inversion') inv+=amt;
+    });
+    const saldoInicial = acc;
+    const resultado = inc-exp-inv;
+    acc += resultado;
+    out.push({m, label: scenario.startDate ? monthLabelFromYYYYMM(scenario.startDate, m-1) : 'Mes '+m, income:inc, expense:exp, investment:inv, result:resultado, saldoInicial, saldoFinal:acc});
+  }
+  return out;
+}
+function renderFlujoFondos(el, user, company, state, canCreate, canEdit, canDelete){
+  const flow = state.flow;
+  if(flow.view==='escenario' && flow.scenarioId){
+    return renderScenarioDetalle(el, user, company, state, canCreate, canEdit, canDelete);
+  }
+  const subtabs = [{key:'real',label:'Flujo real'},{key:'escenarios',label:'Simulador de escenarios'}];
+  const actions = flow.view==='escenarios' && canCreate ? '<button class="btn btn-primary" id="scenNewBtn">'+icon('plus')+' Nuevo escenario</button>' : '';
+  const body = flow.view==='escenarios' ? scenariosListHtml(company) : flujoRealHtml(company, flow, canEdit);
+
+  el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.', actions)+
+    tabsHtml(FINANZAS_TABS, state.tab)+
+    '<div class="tabbar" style="margin-top:-6px;margin-bottom:14px">'+subtabs.map(t=>'<div class="tab '+(t.key===flow.view?'active':'')+'" data-subtab="'+t.key+'">'+esc(t.label)+'</div>').join('')+'</div>'+
+    body;
+
+  wireTabs(el, tab=>{ state.tab=tab; renderFinanzas(el,user,company,state); });
+  el.querySelectorAll('[data-subtab]').forEach(b=>b.addEventListener('click', ()=>{ flow.view=b.getAttribute('data-subtab'); renderFinanzas(el,user,company,state); }));
+
+  if(flow.view==='real'){
+    mountFlujoRealChart(company, flow.months);
+    el.querySelectorAll('[data-months]').forEach(b=>b.addEventListener('click', ()=>{ flow.months=Number(b.getAttribute('data-months')); renderFinanzas(el,user,company,state); }));
+    const editBalBtn = document.getElementById('editOpeningBalBtn');
+    if(editBalBtn) editBalBtn.addEventListener('click', ()=> openOpeningBalanceForm(company, ()=>renderFinanzas(el,user,company,state)));
+  } else {
+    const newBtn = document.getElementById('scenNewBtn');
+    if(newBtn) newBtn.addEventListener('click', ()=> openScenarioForm(company, null, (created)=>{ if(created && created.id){ flow.view='escenario'; flow.scenarioId=created.id; } renderFinanzas(el,user,company,state); }));
+    el.querySelectorAll('[data-open-scenario]').forEach(b=>b.addEventListener('click', ()=>{ flow.view='escenario'; flow.scenarioId=b.getAttribute('data-open-scenario'); renderFinanzas(el,user,company,state); }));
+  }
+}
+function flujoRealHtml(company, flow, canEdit){
+  const opening = (G.DB.cashFlowOpeningBalance && G.DB.cashFlowOpeningBalance[company.id]) || 0;
+  const series = cashFlowRealSeries(company.id, flow.months);
+  const monthBtns = [6,12,24].map(n=>'<button type="button" data-months="'+n+'" class="'+(flow.months===n?'active':'')+'">'+n+' meses</button>').join('');
+  return '<div class="flex justify-between items-center" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">'+
+      '<div class="subtle" style="font-size:12.5px">Saldo inicial (previo al primer mes mostrado): <b class="mono">'+fmt.currency(opening)+'</b>'+(canEdit?' <button class="btn btn-sm" id="editOpeningBalBtn" style="margin-left:8px">'+icon('edit')+' Editar</button>':'')+'</div>'+
+      '<div class="period-toggle">'+monthBtns+'</div>'+
+    '</div>'+
+    ui.card('Saldo acumulado', 'A partir de los ingresos, egresos e inversiones ya cargados', '<div id="flujoRealChart"></div>')+
+    '<div class="table-card" style="margin-top:16px"><div class="table-wrap"><table><thead><tr><th>Mes</th><th class="num">Saldo inicial</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Inversiones</th><th class="num">Resultado</th><th class="num">Saldo final</th></tr></thead><tbody>'+
+    series.map(m=>'<tr'+(m.saldoFinal<0?' style="background:var(--critical-soft)"':'')+'>'+
+      '<td>'+m.label+'</td>'+
+      '<td class="num mono subtle">'+fmt.currency(m.saldoInicial)+'</td>'+
+      '<td class="num mono" style="color:var(--good)">+'+fmt.currency(m.income)+'</td>'+
+      '<td class="num mono" style="color:var(--critical)">−'+fmt.currency(m.expense)+'</td>'+
+      '<td class="num mono" style="color:var(--accent)">'+(m.investment?'−'+fmt.currency(m.investment):'—')+'</td>'+
+      '<td class="num mono" style="color:'+(m.result>=0?'var(--good)':'var(--critical)')+'">'+fmt.currency(m.result)+'</td>'+
+      '<td class="num mono" style="font-weight:700;color:'+(m.saldoFinal>=0?'inherit':'var(--critical)')+'">'+fmt.currency(m.saldoFinal)+'</td>'+
+    '</tr>').join('')+
+    '</tbody></table></div></div>';
+}
+function mountFlujoRealChart(company, months){
+  const series = cashFlowRealSeries(company.id, months);
+  const chartEl = document.getElementById('flujoRealChart');
+  if(chartEl) G.charts.line(chartEl, [{name:'Saldo acumulado', data: series.map(m=>({x:m.label,y:m.saldoFinal}))}], {showArea:true});
+}
+function openOpeningBalanceForm(company, onDone){
+  G.modal.form({
+    title:'Saldo inicial del Flujo de Fondos', subtitle: company.name, submitLabel:'Guardar',
+    note:'Saldo de caja/banco de la empresa al momento anterior al primer mes que se muestra en el Flujo de Fondos real. No afecta a ningún otro cálculo del sistema.',
+    initial: {balance: (G.DB.cashFlowOpeningBalance && G.DB.cashFlowOpeningBalance[company.id]) || 0},
+    fields:[{key:'balance', label:'Saldo inicial', type:'number', step:'0.01', required:true}],
+    onSubmit(v){
+      G.DB.cashFlowOpeningBalance = G.DB.cashFlowOpeningBalance || {};
+      G.DB.cashFlowOpeningBalance[company.id] = Number(v.balance)||0;
+      G.persist();
+      G.logActivity('actualizó el saldo inicial del Flujo de Fondos', company.name, company.id);
+      G.toast('Saldo inicial guardado');
+      onDone();
+    }
+  });
+}
+function scenariosListHtml(company){
+  const scenarios = G.crud.byCompany(G.DB.cashFlowScenarios, company.id);
+  if(!scenarios.length) return ui.emptyState('compass', 'Todavía no se armó ningún escenario. Creá uno para simular flujos de fondos hipotéticos -- por ejemplo, para analizar una inversión antes de decidirla.');
+  return '<div class="grid-2">'+scenarios.map(s=>{
+    const proj = scenarioProjection(s);
+    const final = proj[proj.length-1];
+    const wentNegative = proj.some(m=>m.saldoFinal<0);
+    return '<div class="card" style="cursor:pointer" data-open-scenario="'+s.id+'">'+
+      '<div class="flex justify-between items-start" style="gap:10px"><div><div class="card-title">'+esc(s.name)+'</div>'+
+      '<div class="subtle" style="font-size:12px;margin-top:2px">'+(s.startDate?esc(monthLabelFromYYYYMM(s.startDate,0))+' · ':'')+s.horizonMonths+' meses · Saldo inicial '+fmt.currency(s.startBalance)+'</div></div>'+
+      (wentNegative?ui.badge('critical','Saldo negativo proyectado'):ui.badge('good','Sin descubiertos'))+
+      '</div>'+
+      '<div style="margin-top:12px;display:flex;gap:22px">'+
+        '<div><div class="subtle" style="font-size:11px">Saldo final proyectado</div><div class="mono" style="font-weight:700;font-size:16px;color:'+(final.saldoFinal>=0?'inherit':'var(--critical)')+'">'+fmt.currency(final.saldoFinal)+'</div></div>'+
+        '<div><div class="subtle" style="font-size:11px">Supuestos cargados</div><div class="mono" style="font-weight:700;font-size:16px">'+(s.items||[]).length+'</div></div>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'</div>';
+}
+function openScenarioForm(company, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar escenario':'Nuevo escenario de Flujo de Fondos', submitLabel: existing?'Guardar cambios':'Crear escenario',
+    subtitle: 'Simulá un flujo de fondos hipotético a partir de supuestos propios -- útil para analizar una inversión antes de decidirla.',
+    wide:true,
+    initial: existing || {startDate: G.TODAY_ISO.slice(0,7), startBalance:0, horizonMonths:12},
+    onDelete: existing ? ()=>{
+      G.modal.confirm({title:'Eliminar escenario', desc:'Se van a borrar también todos sus supuestos. Esta acción no se puede deshacer.', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+        G.crud.removeItem(G.DB.cashFlowScenarios, existing.id);
+        G.logActivity('eliminó el escenario "'+existing.name+'"', company.name, company.id);
+        G.toast('Escenario eliminado');
+        onDone({deleted:true});
+      }});
+    } : null,
+    fields:[
+      {key:'name', label:'Nombre del escenario', required:true, fullWidth:true, placeholder:'Ej: Compra de maquinaria nueva'},
+      {key:'startDate', label:'Mes de inicio', type:'month'},
+      {key:'startBalance', label:'Saldo inicial', type:'number', step:'0.01', required:true},
+      {key:'horizonMonths', label:'Horizonte (meses)', type:'number', step:'1', required:true, placeholder:'12'},
+    ],
+    onSubmit(v){
+      const payload = {name:v.name, startDate:v.startDate||'', startBalance:Number(v.startBalance)||0, horizonMonths:Math.max(1,Math.min(60,Math.round(Number(v.horizonMonths))||12))};
+      if(existing){
+        G.crud.updateItem(G.DB.cashFlowScenarios, existing.id, payload);
+        G.logActivity('editó el escenario "'+v.name+'"', company.name, company.id);
+        G.toast('Cambios guardados');
+        onDone(Object.assign({}, existing, payload));
+      } else {
+        const created = G.crud.addItem(G.DB.cashFlowScenarios, Object.assign({companyId:company.id, items:[]}, payload), 'scen');
+        G.logActivity('creó el escenario "'+v.name+'"', company.name, company.id);
+        G.toast('Escenario creado');
+        onDone(created);
+      }
+    }
+  });
+}
+function renderScenarioDetalle(el, user, company, state, canCreate, canEdit, canDelete){
+  const flow = state.flow;
+  const scenario = G.DB.cashFlowScenarios.find(s=>s.id===flow.scenarioId);
+  if(!scenario){ flow.view='escenarios'; flow.scenarioId=null; return renderFlujoFondos(el,user,company,state,canCreate,canEdit,canDelete); }
+  const proj = scenarioProjection(scenario);
+  const actions = (canEdit?'<button class="btn" id="scenEditBtn">'+icon('edit')+' Editar escenario</button>':'')+(canCreate?'<button class="btn btn-primary" id="scenItemNewBtn">'+icon('plus')+' Nuevo supuesto</button>':'');
+
+  const itemsBody = (scenario.items||[]).length ? scenario.items.map(it=>'<tr>'+
+      '<td>'+esc(it.concept)+'</td>'+
+      '<td>'+ui.badge(it.type==='ingreso'?'good':it.type==='inversion'?'accent':'critical', it.type==='ingreso'?'Ingreso':it.type==='inversion'?'Inversión':'Egreso')+'</td>'+
+      '<td class="subtle" style="font-size:12.3px">'+(it.frequency==='mensual'?'Mensual desde mes '+it.month:'Único, mes '+it.month)+'</td>'+
+      '<td class="num mono">'+fmt.currency(it.amount)+'</td>'+
+      '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-item="'+it.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-item="'+it.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
+    '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('sparkles','Todavía no se cargaron supuestos para este escenario.')+'</td></tr>';
+
+  el.innerHTML = ui.pageHeader(scenario.name, 'Escenario de Flujo de Fondos · '+scenario.horizonMonths+' meses · Saldo inicial '+fmt.currency(scenario.startBalance), actions)+
+    '<div class="btn btn-sm" id="scenBackBtn" style="display:inline-flex;margin-bottom:14px;cursor:pointer">'+icon('chevron-left')+' Volver a escenarios</div>'+
+    ui.card('Saldo proyectado', 'Resultado acumulado del escenario, mes a mes', '<div id="scenChart"></div>')+
+    '<div class="table-card" style="margin-top:16px"><div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+(scenario.items||[]).length+' supuesto(s)</div></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Tipo</th><th>Frecuencia</th><th class="num">Importe</th><th></th></tr></thead><tbody>'+itemsBody+'</tbody></table></div></div>'+
+    '<div class="table-card" style="margin-top:16px"><div class="table-wrap"><table><thead><tr><th>Mes</th><th class="num">Saldo inicial</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Inversiones</th><th class="num">Resultado</th><th class="num">Saldo final</th></tr></thead><tbody>'+
+    proj.map(m=>'<tr'+(m.saldoFinal<0?' style="background:var(--critical-soft)"':'')+'>'+
+      '<td>'+esc(m.label)+'</td>'+
+      '<td class="num mono subtle">'+fmt.currency(m.saldoInicial)+'</td>'+
+      '<td class="num mono" style="color:var(--good)">+'+fmt.currency(m.income)+'</td>'+
+      '<td class="num mono" style="color:var(--critical)">−'+fmt.currency(m.expense)+'</td>'+
+      '<td class="num mono" style="color:var(--accent)">'+(m.investment?'−'+fmt.currency(m.investment):'—')+'</td>'+
+      '<td class="num mono" style="color:'+(m.result>=0?'var(--good)':'var(--critical)')+'">'+fmt.currency(m.result)+'</td>'+
+      '<td class="num mono" style="font-weight:700;color:'+(m.saldoFinal>=0?'inherit':'var(--critical)')+'">'+fmt.currency(m.saldoFinal)+'</td>'+
+    '</tr>').join('')+
+    '</tbody></table></div></div>';
+
+  G.charts.line(document.getElementById('scenChart'), [{name:'Saldo acumulado', data: proj.map(m=>({x:m.label,y:m.saldoFinal}))}], {showArea:true});
+
+  document.getElementById('scenBackBtn').addEventListener('click', ()=>{ flow.view='escenarios'; flow.scenarioId=null; renderFinanzas(el,user,company,state); });
+  const editBtn = document.getElementById('scenEditBtn');
+  if(editBtn) editBtn.addEventListener('click', ()=> openScenarioForm(company, scenario, (result)=>{
+    if(result && result.deleted){ flow.view='escenarios'; flow.scenarioId=null; }
+    renderFinanzas(el,user,company,state);
+  }));
+  const newItemBtn = document.getElementById('scenItemNewBtn');
+  if(newItemBtn) newItemBtn.addEventListener('click', ()=> openScenarioItemForm(company, scenario, null, ()=>renderFinanzas(el,user,company,state)));
+  el.querySelectorAll('[data-edit-item]').forEach(b=>b.addEventListener('click', ()=>{
+    const item = (scenario.items||[]).find(x=>x.id===b.getAttribute('data-edit-item'));
+    openScenarioItemForm(company, scenario, item, ()=>renderFinanzas(el,user,company,state));
+  }));
+  el.querySelectorAll('[data-del-item]').forEach(b=>b.addEventListener('click', ()=>{
+    const id = b.getAttribute('data-del-item');
+    G.modal.confirm({title:'Eliminar supuesto', danger:true, confirmLabel:'Eliminar', onConfirm:()=>{
+      scenario.items = (scenario.items||[]).filter(x=>x.id!==id);
+      G.crud.updateItem(G.DB.cashFlowScenarios, scenario.id, {items:scenario.items});
+      G.toast('Supuesto eliminado');
+      renderFinanzas(el,user,company,state);
+    }});
+  }));
+}
+function openScenarioItemForm(company, scenario, existing, onDone){
+  G.modal.form({
+    title: existing?'Editar supuesto':'Nuevo supuesto', submitLabel: existing?'Guardar cambios':'Agregar',
+    subtitle: scenario.name,
+    initial: existing || {type:'ingreso', frequency:'unico', month:1},
+    onDelete: existing ? ()=>{
+      scenario.items = (scenario.items||[]).filter(x=>x.id!==existing.id);
+      G.crud.updateItem(G.DB.cashFlowScenarios, scenario.id, {items:scenario.items});
+      G.toast('Supuesto eliminado');
+      onDone();
+    } : null,
+    fields:[
+      {key:'concept', label:'Concepto', required:true, fullWidth:true, placeholder:'Ej: Cuota del préstamo para la maquinaria'},
+      {key:'type', label:'Tipo', type:'select', required:true, options:[{value:'ingreso',label:'Ingreso'},{value:'egreso',label:'Egreso'},{value:'inversion',label:'Inversión'}]},
+      {key:'amount', label:'Importe mensual', type:'number', step:'0.01', required:true, placeholder:'0'},
+      {key:'frequency', label:'Frecuencia', type:'select', required:true, options:[{value:'unico',label:'Único (un solo mes)'},{value:'mensual',label:'Mensual (se repite)'}]},
+      {key:'month', label:'Mes', type:'number', step:'1', required:true, placeholder:'1', hint:'Para "Único": el mes puntual. Para "Mensual": el mes desde el que empieza a repetirse.'},
+    ],
+    onSubmit(v){
+      if(v.amount<=0) return false;
+      const month = Math.max(1, Math.round(Number(v.month))||1);
+      if(existing){
+        Object.assign(existing, {concept:v.concept, type:v.type, amount:Number(v.amount), frequency:v.frequency, month});
+      } else {
+        scenario.items = scenario.items || [];
+        scenario.items.push({id:G.uid('item'), concept:v.concept, type:v.type, amount:Number(v.amount), frequency:v.frequency, month});
+      }
+      G.crud.updateItem(G.DB.cashFlowScenarios, scenario.id, {items: scenario.items});
+      G.toast(existing?'Cambios guardados':'Supuesto agregado');
+      onDone();
+    }
   });
 }
 
@@ -5643,13 +5993,32 @@ function renderCompanyConfig(el, user, company, state){
   ui.wireTabs(el, tab=>{ state.tab=tab; renderCompanyConfig(el,user,company,state); });
 
   if(state.tab==='modulos' && isSuper){
-    el.querySelectorAll('[data-toggle-module]').forEach(inp=>inp.addEventListener('change', ()=>{
+    // Importante: los módulos son una columna real de la empresa (no datos
+    // operativos), así que esto tiene que ir por PATCH /api/companies/:id --
+    // antes se guardaba con G.crud.updateItem+persist(), que solo sincroniza
+    // operational_data y nunca llegaba a tocar esa columna (el cambio se veía
+    // en pantalla pero se perdía al recargar, y podía disparar un falso aviso
+    // de "se actualizó en otro dispositivo" por pisar la versión equivocada).
+    el.querySelectorAll('[data-toggle-module]').forEach(inp=>inp.addEventListener('change', async ()=>{
       const key = inp.getAttribute('data-toggle-module');
       const on = inp.checked;
       const mods = new Set(company.modules||[]);
       if(on) mods.add(key); else mods.delete(key);
-      G.crud.updateItem(G.DB.companies, company.id, {modules:[...mods]});
-      company.modules = [...mods];
+      const nextModules = [...mods];
+      inp.disabled = true;
+      let res, body;
+      try{
+        res = await fetch('/api/companies/'+company.id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({modules:nextModules})});
+        body = await res.json().catch(()=>({}));
+      }catch(err){
+        G.toast('No se pudo conectar con el servidor. Probá de nuevo.');
+        inp.checked = !on; inp.disabled = false; return;
+      }
+      if(!res.ok){
+        G.toast(res.status===403 ? 'No tenés permiso para modificar los módulos.' : 'No se pudo guardar el cambio.');
+        inp.checked = !on; inp.disabled = false; return;
+      }
+      Object.assign(company, body.company);
       if(on) G.ensureClubCategoryDefaults(company);
       G.logActivity((on?'activó':'desactivó')+' el módulo '+esc(moduleFlagLabel(key)), company.name, company.id);
       G.toast('Módulo '+(on?'activado':'desactivado'));
@@ -6293,37 +6662,193 @@ function addDaysISO(iso, days){
 
 G.pages.diagnostico = function(el, user, company){
   const canEdit = user.role==='SUPER_ADMIN' || user.role==='ADMIN_EMPRESA';
-  renderDiagnostico(el, user, company, canEdit);
+  const state = el._diagState || {tab:'indice'};
+  el._diagState = state;
+  renderDiagnostico(el, user, company, canEdit, state);
 };
 
-function renderDiagnostico(el, user, company, canEdit){
+function renderDiagnostico(el, user, company, canEdit, state){
+  const tabs = [
+    {key:'indice', label:'Índice MODO'},
+    {key:'foda', label:'Matriz FODA'},
+    {key:'canvas', label:'Canvas de negocio'},
+  ];
+
+  if(state.tab==='indice') return renderIndiceTab(el, user, company, canEdit, state, tabs);
+  if(state.tab==='foda') return renderFodaTab(el, user, company, canEdit, state, tabs);
+  if(state.tab==='canvas') return renderCanvasTab(el, user, company, canEdit, state, tabs);
+}
+
+function renderIndiceTab(el, user, company, canEdit, state, tabs){
   const diag = G.lastModoDiagnostic(company.id);
   const history = G.DB.modoDiagnostics.filter(d=>d.companyId===company.id).sort((a,b)=>a.date.localeCompare(b.date));
   const actionBtn = canEdit ? '<button class="btn btn-primary" id="modoDiagBtn">'+icon(diag?'edit':'plus')+' '+(diag?'Actualizar diagnóstico':'Realizar diagnóstico inicial')+'</button>' : '';
 
-  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn);
+  const body = !diag
+    ? ui.emptyState('activity', canEdit ? 'Todavía no se realizó un diagnóstico de esta empresa. Empezá por evaluar sus 8 dimensiones clave.' : 'Todavía no se realizó un diagnóstico de esta empresa.')
+    : diagnosticoBodyHtml(company, diag, history, canEdit);
 
-  if(!diag){
-    el.innerHTML += ui.emptyState('activity', canEdit ? 'Todavía no se realizó un diagnóstico de esta empresa. Empezá por evaluar sus 8 dimensiones clave.' : 'Todavía no se realizó un diagnóstico de esta empresa.');
-  } else {
-    el.innerHTML += diagnosticoBodyHtml(company, diag, history, canEdit);
-  }
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+    ui.tabsHtml(tabs, state.tab) + body;
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
 
   const b = document.getElementById('modoDiagBtn');
-  if(b) b.addEventListener('click', ()=> openModoDiagnosticoForm(company, diag, ()=>renderDiagnostico(el,user,company,canEdit)));
+  if(b) b.addEventListener('click', ()=> openModoDiagnosticoForm(company, diag, ()=>renderDiagnostico(el,user,company,canEdit,state)));
 
   if(diag && canEdit){
     el.querySelectorAll('[data-crear-plan]').forEach(btn=>btn.addEventListener('click', ()=>{
       const dimKey = btn.getAttribute('data-crear-plan');
       const dim = G.modoDimByKey(dimKey);
       const score = diag.scores[dimKey];
-      crearPlanDesdeDiagnostico(company, dim, score, ()=>renderDiagnostico(el,user,company,canEdit));
+      crearPlanDesdeDiagnostico(company, dim, score, ()=>renderDiagnostico(el,user,company,canEdit,state));
     }));
     if(history.length>1){
       const chartEl = document.getElementById('modoTrendChart');
       if(chartEl) G.charts.line(chartEl, [{name:'Índice MODO', data: history.map(h=>({x:fmt.date(h.date), y:G.computeModoIndex(h.scores, G.DB.modoWeights[company.id])}))}], {showArea:true, money:false});
     }
   }
+}
+
+/* ---------- Matriz FODA (Fortalezas / Oportunidades / Debilidades / Amenazas) ----------
+   Documento único vigente por empresa (no un historial): G.DB.swot[companyId], con
+   una lista de ítems por cuadrante. Se edita con un formulario de 4 textareas (un
+   ítem por línea) para mantener la carga simple, y se muestra como una matriz 2x2
+   con viñetas -- el "más información, en formato de matriz" que pidió el consultor. */
+function swotFor(companyId){
+  const s = (G.DB.swot && G.DB.swot[companyId]) || {};
+  return {
+    fortalezas: s.fortalezas||[], oportunidades: s.oportunidades||[],
+    debilidades: s.debilidades||[], amenazas: s.amenazas||[],
+  };
+}
+function swotQuadrantHtml(label, items, tone, iconName){
+  return '<div class="card"><div class="flex items-center gap-sm" style="margin-bottom:10px">'+
+    '<div style="width:26px;height:26px;border-radius:8px;background:var(--'+tone+'-soft);color:var(--'+tone+');display:flex;align-items:center;justify-content:center">'+icon(iconName)+'</div>'+
+    '<div class="card-title" style="font-size:13.5px">'+esc(label)+'</div></div>'+
+    (items.length ? '<ul style="margin:0;padding-left:18px;font-size:12.8px;line-height:1.7;color:var(--text-secondary)">'+items.map(it=>'<li>'+esc(it)+'</li>').join('')+'</ul>'
+      : '<p class="subtle" style="font-size:12.5px">Sin ítems cargados.</p>')+
+    '</div>';
+}
+function renderFodaTab(el, user, company, canEdit, state, tabs){
+  const swot = swotFor(company.id);
+  const total = swot.fortalezas.length+swot.oportunidades.length+swot.debilidades.length+swot.amenazas.length;
+  const actionBtn = canEdit ? '<button class="btn btn-primary" id="swotEditBtn">'+icon(total?'edit':'plus')+' '+(total?'Editar matriz FODA':'Cargar matriz FODA')+'</button>' : '';
+
+  const body = !total
+    ? ui.emptyState('grid', canEdit ? 'Todavía no se cargó la matriz FODA de esta empresa: fortalezas, oportunidades, debilidades y amenazas, en un solo lugar.' : 'Todavía no se cargó la matriz FODA de esta empresa.')
+    : '<div class="grid-2">'+
+      swotQuadrantHtml('Fortalezas', swot.fortalezas, 'good', 'thumbs-up')+
+      swotQuadrantHtml('Oportunidades', swot.oportunidades, 'accent', 'compass')+
+      swotQuadrantHtml('Debilidades', swot.debilidades, 'critical', 'alert-triangle')+
+      swotQuadrantHtml('Amenazas', swot.amenazas, 'warning', 'alert-triangle')+
+    '</div>';
+
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+    ui.tabsHtml(tabs, state.tab) + body;
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
+
+  const b = document.getElementById('swotEditBtn');
+  if(b) b.addEventListener('click', ()=> openSwotForm(company, swot, ()=>renderDiagnostico(el,user,company,canEdit,state)));
+}
+function linesToItems(text){ return String(text||'').split('\n').map(s=>s.trim()).filter(Boolean); }
+function openSwotForm(company, swot, onDone){
+  G.modal.form({
+    title:'Matriz FODA', subtitle: company.name, submitLabel:'Guardar matriz', wide:true,
+    note:'Un ítem por línea en cada cuadrante.',
+    initial:{
+      fortalezas: swot.fortalezas.join('\n'), oportunidades: swot.oportunidades.join('\n'),
+      debilidades: swot.debilidades.join('\n'), amenazas: swot.amenazas.join('\n'),
+    },
+    fields:[
+      {key:'fortalezas', label:'Fortalezas', type:'textarea', fullWidth:true},
+      {key:'oportunidades', label:'Oportunidades', type:'textarea', fullWidth:true},
+      {key:'debilidades', label:'Debilidades', type:'textarea', fullWidth:true},
+      {key:'amenazas', label:'Amenazas', type:'textarea', fullWidth:true},
+    ],
+    onSubmit(v){
+      G.DB.swot = G.DB.swot || {};
+      G.DB.swot[company.id] = {
+        fortalezas: linesToItems(v.fortalezas), oportunidades: linesToItems(v.oportunidades),
+        debilidades: linesToItems(v.debilidades), amenazas: linesToItems(v.amenazas),
+      };
+      G.persist();
+      G.logActivity('actualizó la matriz FODA', company.name, company.id);
+      G.toast('Matriz FODA guardada');
+      onDone();
+    }
+  });
+}
+
+/* ---------- Canvas de Modelo de Negocio (Business Model Canvas, 9 bloques) ----------
+   Mismo patrón que la Matriz FODA: un único documento vigente por empresa
+   (G.DB.canvas[companyId]), editado con un formulario y mostrado como grilla de 9
+   bloques que imita la disposición clásica del canvas. */
+function canvasFor(companyId){
+  const c = (G.DB.canvas && G.DB.canvas[companyId]) || {};
+  return {
+    segmentos:c.segmentos||'', propuesta:c.propuesta||'', canales:c.canales||'', relacion:c.relacion||'',
+    ingresos:c.ingresos||'', recursos:c.recursos||'', actividades:c.actividades||'', socios:c.socios||'', costos:c.costos||'',
+  };
+}
+const CANVAS_BLOCKS = [
+  {key:'socios', label:'Socios clave', area:'socios'},
+  {key:'actividades', label:'Actividades clave', area:'actividades'},
+  {key:'propuesta', label:'Propuesta de valor', area:'propuesta'},
+  {key:'relacion', label:'Relación con clientes', area:'relacion'},
+  {key:'segmentos', label:'Segmentos de clientes', area:'segmentos'},
+  {key:'recursos', label:'Recursos clave', area:'recursos'},
+  {key:'canales', label:'Canales', area:'canales'},
+  {key:'costos', label:'Estructura de costos', area:'costos'},
+  {key:'ingresos', label:'Fuentes de ingresos', area:'ingresos'},
+];
+function canvasBlockHtml(block, text){
+  return '<div class="card" style="grid-area:'+block.area+';min-height:120px;display:flex;flex-direction:column">'+
+    '<div class="card-title" style="font-size:12px;margin-bottom:6px">'+esc(block.label)+'</div>'+
+    (text ? '<p style="font-size:12.3px;line-height:1.55;color:var(--text-secondary);white-space:pre-wrap;margin:0">'+esc(text)+'</p>' : '<p class="subtle" style="font-size:12px">Sin completar.</p>')+
+    '</div>';
+}
+function renderCanvasTab(el, user, company, canEdit, state, tabs){
+  const canvas = canvasFor(company.id);
+  const total = Object.values(canvas).filter(Boolean).length;
+  const actionBtn = canEdit ? '<button class="btn btn-primary" id="canvasEditBtn">'+icon(total?'edit':'plus')+' '+(total?'Editar canvas':'Cargar canvas')+'</button>' : '';
+
+  const body = !total
+    ? ui.emptyState('layers', canEdit ? 'Todavía no se cargó el Canvas de Modelo de Negocio de esta empresa.' : 'Todavía no se cargó el Canvas de Modelo de Negocio de esta empresa.')
+    : '<div class="canvas-grid" style="display:grid;gap:10px;'+
+      'grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(2,auto) auto;'+
+      'grid-template-areas:'+
+        '"socios actividades propuesta relacion segmentos" '+
+        '"socios recursos propuesta canales segmentos" '+
+        '"costos costos costos ingresos ingresos";'+
+      '">'+
+      CANVAS_BLOCKS.map(b=>canvasBlockHtml(b, canvas[b.key])).join('')+
+    '</div>';
+
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+    ui.tabsHtml(tabs, state.tab) + body;
+  ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
+
+  const b = document.getElementById('canvasEditBtn');
+  if(b) b.addEventListener('click', ()=> openCanvasForm(company, canvas, ()=>renderDiagnostico(el,user,company,canEdit,state)));
+}
+function openCanvasForm(company, canvas, onDone){
+  G.modal.form({
+    title:'Canvas de Modelo de Negocio', subtitle: company.name, submitLabel:'Guardar canvas', wide:true,
+    note:'Los 9 bloques del modelo de negocio de la empresa.',
+    initial: canvas,
+    fields: CANVAS_BLOCKS.map(b=>({key:b.key, label:b.label, type:'textarea', fullWidth:true})),
+    onSubmit(v){
+      G.DB.canvas = G.DB.canvas || {};
+      G.DB.canvas[company.id] = {
+        segmentos:v.segmentos||'', propuesta:v.propuesta||'', canales:v.canales||'', relacion:v.relacion||'',
+        ingresos:v.ingresos||'', recursos:v.recursos||'', actividades:v.actividades||'', socios:v.socios||'', costos:v.costos||'',
+      };
+      G.persist();
+      G.logActivity('actualizó el Canvas de Modelo de Negocio', company.name, company.id);
+      G.toast('Canvas guardado');
+      onDone();
+    }
+  });
 }
 
 function diagnosticoBodyHtml(company, diag, history, canEdit){

@@ -9,9 +9,14 @@ interface PatchCompanyBody {
   name?: string; legalName?: string; cuit?: string; activity?: string; sector?: string;
   city?: string; founded?: number | null; responsible?: string; website?: string; status?: string;
   billingEstimate?: number; description?: string;
+  // Lista completa de módulos activos para esta empresa (reemplaza, no agrega).
+  // Solo el consultor puede mandar esto -- ver chequeo de permiso más abajo.
+  // Se maneja aparte de EDITABLE_COLUMNS porque no es un mapeo 1 a 1 a una
+  // columna simple: se combina con la auto-activación por rubro (ver abajo).
+  modules?: string[];
 }
 
-const EDITABLE_COLUMNS: Record<keyof PatchCompanyBody, string> = {
+const EDITABLE_COLUMNS: Record<Exclude<keyof PatchCompanyBody, 'modules'>, string> = {
   name: 'name', legalName: 'legal_name', cuit: 'cuit', activity: 'activity', sector: 'sector',
   city: 'city', founded: 'founded', responsible: 'responsible', website: 'website', status: 'status',
   billingEstimate: 'billing_estimate', description: 'description',
@@ -38,6 +43,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
+  // Activar/desactivar módulos a mano (toggle de Configuración) es una acción
+  // exclusiva del consultor -- un ADMIN_EMPRESA no puede auto-otorgarse módulos
+  // mandando este campo directo a la API.
+  if (Array.isArray(body.modules) && !isSuperAdmin) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   const existing = await getCompanyById(id);
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
@@ -51,14 +63,29 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       values.push(value);
     }
   }
-  // Si el rubro/actividad quedó agropecuario, turístico, etc. después de este
-  // cambio, activar el módulo correspondiente (nunca lo desactiva solo, igual
-  // que G.ensureAutoModules del lado del cliente).
+  // Si el rubro/actividad CAMBIÓ en este pedido y quedó agropecuario, turístico,
+  // etc., activar el módulo correspondiente (nunca lo desactiva solo, igual que
+  // G.ensureAutoModules del lado del cliente). Importante: esto sólo corre
+  // cuando sector/activity realmente cambian de valor en este PATCH puntual --
+  // si corriera en cualquier guardado (ej. el formulario de "Editar datos
+  // generales" reenvía todos los campos, sector incluido, aunque no lo hayan
+  // tocado), un módulo que el consultor acaba de destildar a mano se volvería a
+  // activar solo en el próximo guardado no relacionado, porque para la regla
+  // de auto-detección el rubro "sigue coincidiendo" y ya no lo ve en la lista.
+  const sectorChanged = body.sector !== undefined && body.sector !== existing.sector;
+  const activityChanged = body.activity !== undefined && body.activity !== existing.activity;
   const nextSector = body.sector ?? existing.sector;
   const nextActivity = body.activity ?? existing.activity;
-  const autoModules = autoModulesFor(nextSector, nextActivity, existing.modules);
+  const autoModules = (sectorChanged || activityChanged)
+    ? autoModulesFor(nextSector, nextActivity, existing.modules)
+    : [];
+  const manualModules = Array.isArray(body.modules) ? body.modules : null;
   let nextModules = existing.modules;
-  if (autoModules.length > 0) {
+  if (manualModules) {
+    nextModules = [...new Set([...manualModules, ...autoModules.map(r => r.module)])];
+    setClauses.push(`modules = $${i++}`);
+    values.push(JSON.stringify(nextModules));
+  } else if (autoModules.length > 0) {
     nextModules = [...existing.modules, ...autoModules.map(r => r.module)];
     setClauses.push(`modules = $${i++}`);
     values.push(JSON.stringify(nextModules));

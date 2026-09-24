@@ -107,6 +107,9 @@ export interface DbShape {
   users: ClientUser[];
   finance: { incomes: any[]; expenses: any[] };
   financeCategories: Record<string, { income: string[]; expense: string[] }>;
+  investments: any[];
+  cashFlowScenarios: any[];
+  cashFlowOpeningBalance: Record<string, number>;
   costsFixed: any[];
   costsVariable: any[];
   products: any[];
@@ -120,6 +123,11 @@ export interface DbShape {
   indicators: any[];
   modoDiagnostics: any[];
   modoWeights: Record<string, Record<string, number>>;
+  swot: Record<string, { fortalezas: string[]; oportunidades: string[]; debilidades: string[]; amenazas: string[] }>;
+  canvas: Record<string, {
+    segmentos: string; propuesta: string; canales: string; relacion: string; ingresos: string;
+    recursos: string; actividades: string; socios: string; costos: string;
+  }>;
   consulting: { diagnostics: any[]; actions: any[]; meetings: any[]; notes: any[] };
   helpRequests: any[];
   videoCalls: any[];
@@ -150,6 +158,9 @@ function emptyDbShape(): DbShape {
     users: [],
     finance: { incomes: [], expenses: [] },
     financeCategories: {},
+    investments: [],
+    cashFlowScenarios: [],
+    cashFlowOpeningBalance: {},
     costsFixed: [],
     costsVariable: [],
     products: [],
@@ -163,6 +174,8 @@ function emptyDbShape(): DbShape {
     indicators: [],
     modoDiagnostics: [],
     modoWeights: {},
+    swot: {},
+    canvas: {},
     consulting: { diagnostics: [], actions: [], meetings: [], notes: [] },
     helpRequests: [],
     videoCalls: [],
@@ -189,6 +202,7 @@ function emptyDbShape(): DbShape {
 }
 
 const FLAT_KEYS = [
+  'investments', 'cashFlowScenarios',
   'costsFixed', 'costsVariable', 'products', 'clients', 'sales', 'pipeline',
   'employees', 'evaluations', 'innovation', 'objectives', 'indicators',
   'modoDiagnostics', 'helpRequests', 'videoCalls', 'chatMessages',
@@ -222,6 +236,9 @@ export function mergeIntoDbShape(
     db.finance.expenses.push(...stamp(od.finance?.expenses, cid));
     db.financeCategories[cid] = od.financeCategories || { income: [], expense: [] };
     db.modoWeights[cid] = od.modoWeights || {};
+    db.cashFlowOpeningBalance[cid] = od.cashFlowOpeningBalance || 0;
+    db.swot[cid] = od.swot || { fortalezas: [], oportunidades: [], debilidades: [], amenazas: [] };
+    db.canvas[cid] = od.canvas || { segmentos: '', propuesta: '', canales: '', relacion: '', ingresos: '', recursos: '', actividades: '', socios: '', costos: '' };
     db.companyLogos[cid] = od.companyLogo || '';
     db.clubCategories[cid] = od.clubCategories || [];
 
@@ -258,6 +275,12 @@ export function extractOperationalData(dbSlice: {
   finance?: { incomes?: any[]; expenses?: any[] };
   financeCategories?: Record<string, { income: string[]; expense: string[] }>;
   modoWeights?: Record<string, Record<string, number>>;
+  cashFlowOpeningBalance?: Record<string, number>;
+  swot?: Record<string, { fortalezas: string[]; oportunidades: string[]; debilidades: string[]; amenazas: string[] }>;
+  canvas?: Record<string, {
+    segmentos: string; propuesta: string; canales: string; relacion: string; ingresos: string;
+    recursos: string; actividades: string; socios: string; costos: string;
+  }>;
   companyLogos?: Record<string, string>;
   clubCategories?: Record<string, string[]>;
   consulting?: { diagnostics?: any[]; actions?: any[]; meetings?: any[]; notes?: any[] };
@@ -268,6 +291,9 @@ export function extractOperationalData(dbSlice: {
   od.finance.expenses = unstamp(dbSlice.finance?.expenses, companyId) as any[];
   od.financeCategories = (dbSlice.financeCategories && dbSlice.financeCategories[companyId]) || { income: [], expense: [] };
   od.modoWeights = (dbSlice.modoWeights && dbSlice.modoWeights[companyId]) || {};
+  od.cashFlowOpeningBalance = (dbSlice.cashFlowOpeningBalance && dbSlice.cashFlowOpeningBalance[companyId]) || 0;
+  od.swot = (dbSlice.swot && dbSlice.swot[companyId]) || { fortalezas: [], oportunidades: [], debilidades: [], amenazas: [] };
+  od.canvas = (dbSlice.canvas && dbSlice.canvas[companyId]) || { segmentos: '', propuesta: '', canales: '', relacion: '', ingresos: '', recursos: '', actividades: '', socios: '', costos: '' };
   od.companyLogo = (dbSlice.companyLogos && dbSlice.companyLogos[companyId]) || '';
   od.clubCategories = (dbSlice.clubCategories && dbSlice.clubCategories[companyId]) || [];
 
