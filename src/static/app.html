@@ -2742,9 +2742,20 @@ G.ui.emptyState = function(iconName, text, actionHtml){
   return '<div class="empty-state">'+icon(iconName||'info','icon')+'<div>'+esc(text)+'</div>'+(actionHtml||'')+'</div>';
 };
 
-G.ui.pageHeader = function(title, desc, actionsHtml, logoHtml){
-  const titleBlock = '<div><h1 class="page-title">'+esc(title)+'</h1>'+(desc?'<p class="page-desc">'+desc+'</p>':'')+'</div>';
-  return '<div class="page-head">'+(logoHtml?('<div style="display:flex;align-items:center;gap:14px;min-width:0">'+logoHtml+titleBlock+'</div>'):titleBlock)+(actionsHtml?'<div class="page-actions">'+actionsHtml+'</div>':'')+'</div>';
+// El 4to parámetro (company) es opcional -- cuando se pasa, el título se arma como
+// "Nombre de la empresa - Título de la sección" y se muestra el logo de la empresa
+// en tamaño grande al lado, en TODAS las pantallas de trabajo (a pedido explícito
+// del consultor). Las pantallas que no son de una empresa puntual (ej. el listado
+// "Empresas" o el Dashboard general del consultor) simplemente no lo pasan y se
+// ven como siempre.
+G.ui.pageHeader = function(title, desc, actionsHtml, company){
+  const fullTitle = company ? (company.name+' - '+title) : title;
+  // flex:none en el contenedor del logo -- si no, al achicarse la pantalla el logo
+  // se comprime en ancho (queda "aplastado") en vez de mantenerse cuadrado; lo que
+  // tiene que ceder espacio es el bloque de texto, no el logo.
+  const logoHtml = company ? '<div style="flex:none">'+G.ui.companyLogoHtml(company, {size:64, fontSize:22})+'</div>' : '';
+  const titleBlock = '<div style="min-width:0"><h1 class="page-title">'+esc(fullTitle)+'</h1>'+(desc?'<p class="page-desc">'+desc+'</p>':'')+'</div>';
+  return '<div class="page-head">'+(logoHtml?('<div style="display:flex;align-items:center;gap:16px;min-width:0">'+logoHtml+titleBlock+'</div>'):titleBlock)+(actionsHtml?'<div class="page-actions">'+actionsHtml+'</div>':'')+'</div>';
 };
 
 G.ui.infoCallout = function(text){
@@ -3183,10 +3194,10 @@ function renderPage(el, user, company, route){
     try{ pageFn(el, user, company, route); }
     catch(err){
       console.error(err);
-      el.innerHTML = G.ui.pageHeader('Ocurrió un error', 'No se pudo cargar esta sección.')+'<div class="card"><pre class="mono" style="white-space:pre-wrap;font-size:11.5px">'+esc(err.stack||err.message)+'</pre></div>';
+      el.innerHTML = G.ui.pageHeader('Ocurrió un error', 'No se pudo cargar esta sección.', null, company)+'<div class="card"><pre class="mono" style="white-space:pre-wrap;font-size:11.5px">'+esc(err.stack||err.message)+'</pre></div>';
     }
   } else {
-    el.innerHTML = G.ui.pageHeader('Próximamente', 'Esta sección está en construcción.')+G.ui.emptyState('layers','Este módulo se está preparando.');
+    el.innerHTML = G.ui.pageHeader('Próximamente', 'Esta sección está en construcción.', null, company)+G.ui.emptyState('layers','Este módulo se está preparando.');
   }
 }
 
@@ -3507,7 +3518,7 @@ function renderCompanyDashboard(el, user, company, period){
   const indicators = G.DB.indicators.filter(i=>i.companyId===company.id);
   const pendingActions = G.DB.consulting.actions.filter(a=>a.companyId===company.id && a.status!=='Completada');
 
-  let html = ui.pageHeader('Centro de Gestión — '+company.name, company.activity, G.periodToggleHtml(period)+ui.printBtn(), G.ui.companyLogoHtml(company, {size:52, fontSize:18}));
+  let html = ui.pageHeader('Centro de Gestión', company.activity, G.periodToggleHtml(period)+ui.printBtn(), company);
 
   const badAlerts = alerts.filter(a=>a.level!=='good');
 
@@ -3781,7 +3792,7 @@ function renderFinanzas(el, user, company, state){
   el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.',
       state.tab==='resumen' ? G.periodToggleHtml(state.period)+(canExportFin?ui.printBtn():'') :
       state.tab==='categorias' ? '' :
-      (canCreate ? (state.tab!=='inversiones' ? '<button class="btn" id="finImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn" id="finQuickBtn">'+icon('mic')+' Carga rápida</button>' : '')+'<button class="btn btn-primary" id="finNewBtn">'+icon('plus')+' '+newBtnLabel+'</button>' : '')) +
+      (canCreate ? (state.tab!=='inversiones' ? '<button class="btn" id="finImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn" id="finQuickBtn">'+icon('mic')+' Carga rápida</button>' : '')+'<button class="btn btn-primary" id="finNewBtn">'+icon('plus')+' '+newBtnLabel+'</button>' : ''), company) +
     tabsHtml(FINANZAS_TABS, state.tab) +
     body;
 
@@ -4082,7 +4093,7 @@ function renderFlujoFondos(el, user, company, state, canCreate, canEdit, canDele
   const actions = flow.view==='escenarios' && canCreate ? '<button class="btn btn-primary" id="scenNewBtn">'+icon('plus')+' Nuevo escenario</button>' : '';
   const body = flow.view==='escenarios' ? scenariosListHtml(company) : flujoRealHtml(company, flow, canEdit);
 
-  el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.', actions)+
+  el.innerHTML = ui.pageHeader('Finanzas', 'Ingresos, egresos y resultado. Pensado para pymes, no reemplaza a tu sistema contable.', actions, company)+
     tabsHtml(FINANZAS_TABS, state.tab)+
     '<div class="tabbar" style="margin-top:-6px;margin-bottom:14px">'+subtabs.map(t=>'<div class="tab '+(t.key===flow.view?'active':'')+'" data-subtab="'+t.key+'">'+esc(t.label)+'</div>').join('')+'</div>'+
     body;
@@ -4213,7 +4224,7 @@ function renderScenarioDetalle(el, user, company, state, canCreate, canEdit, can
       '<td><div class="row-actions">'+(canEdit?'<button class="btn btn-sm icon-btn" data-edit-item="'+it.id+'">'+icon('edit')+'</button>':'')+(canDelete?'<button class="btn btn-sm icon-btn" data-del-item="'+it.id+'">'+icon('trash')+'</button>':'')+'</div></td>'+
     '</tr>').join('') : '<tr><td colspan="5">'+ui.emptyState('sparkles','Todavía no se cargaron supuestos para este escenario.')+'</td></tr>';
 
-  el.innerHTML = ui.pageHeader(scenario.name, 'Escenario de Flujo de Fondos · '+scenario.horizonMonths+' meses · Saldo inicial '+fmt.currency(scenario.startBalance), actions)+
+  el.innerHTML = ui.pageHeader(scenario.name, 'Escenario de Flujo de Fondos · '+scenario.horizonMonths+' meses · Saldo inicial '+fmt.currency(scenario.startBalance), actions, company)+
     '<div class="btn btn-sm" id="scenBackBtn" style="display:inline-flex;margin-bottom:14px;cursor:pointer">'+icon('chevron-left')+' Volver a escenarios</div>'+
     ui.card('Saldo proyectado', 'Resultado acumulado del escenario, mes a mes', '<div id="scenChart"></div>')+
     '<div class="table-card" style="margin-top:16px"><div class="table-toolbar"><div class="subtle" style="font-size:12.5px">'+(scenario.items||[]).length+' supuesto(s)</div></div>'+
@@ -4318,7 +4329,7 @@ function renderCostos(el, user, company, state){
   if(gastro) tabs.push({key:'carta',label:'La Carta'});
   tabs.push({key:'fijos',label:'Costos fijos'},{key:'variables',label:'Costos variables'},{key:'calculadora',label:'Calculadora de precio'});
 
-  el.innerHTML = ui.pageHeader('Costos', 'Estructura de costos, margen y punto de equilibrio de tu negocio.', actions) +
+  el.innerHTML = ui.pageHeader('Costos', 'Estructura de costos, margen y punto de equilibrio de tu negocio.', actions, company) +
     tabsHtml(tabs, state.tab) +
     body;
 
@@ -4734,7 +4745,7 @@ function renderComercial(el, user, company, state){
   else if(state.tab==='ventas'){ body = ventasTableHtml(company, state, canEdit, canDelete); actions = canCreate?'<button class="btn btn-primary" id="ventaNewBtn">'+icon('plus')+' Nueva venta</button>':''; }
   else if(state.tab==='pipeline'){ body = pipelineHtml(company); actions = canCreate?'<button class="btn btn-primary" id="pipeNewBtn">'+icon('plus')+' Nuevo prospecto</button>':''; }
 
-  el.innerHTML = ui.pageHeader('Comercial', 'Ventas, clientes y el recorrido comercial de tu negocio.', actions)+
+  el.innerHTML = ui.pageHeader('Comercial', 'Ventas, clientes y el recorrido comercial de tu negocio.', actions, company)+
     ui.tabsHtml([{key:'resumen',label:'Resumen'},{key:'ventas',label:'Ventas'},{key:'pipeline',label:'Pipeline'}], state.tab)+
     body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderComercial(el,user,company,state); });
@@ -4914,7 +4925,7 @@ function renderClientes(el, user, company, state){
   const segments = [...new Set(G.DB.clients.filter(c=>c.companyId===company.id).map(c=>c.segment))];
 
   el.innerHTML = ui.pageHeader('Clientes', 'Base de clientes de '+company.name+'.',
-      (canCreate?'<button class="btn" id="cliImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn btn-primary" id="cliNewBtn">'+icon('plus')+' Nuevo cliente</button>':''))+
+      (canCreate?'<button class="btn" id="cliImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn btn-primary" id="cliNewBtn">'+icon('plus')+' Nuevo cliente</button>':''), company)+
     '<div class="table-card">'+
       '<div class="table-toolbar">'+
         '<div class="search-input">'+icon('search')+'<input type="text" id="cliSearch" placeholder="Buscar por nombre..." value="'+esc(state.search)+'"/></div>'+
@@ -5008,7 +5019,7 @@ function renderRRHH(el, user, company, state){
   else if(state.tab==='empleados'){ body = empleadosTableHtml(company, state, canEdit, canDelete); actions = canCreate?'<button class="btn" id="empImportBtn">'+icon('upload')+' Importar CSV</button><button class="btn btn-primary" id="empNewBtn">'+icon('plus')+' Nuevo empleado</button>':''; }
   else if(state.tab==='evaluacion'){ body = evaluacionesHtml(company); actions = canCreate?'<button class="btn btn-primary" id="evalNewBtn">'+icon('plus')+' Nueva evaluación</button>':''; }
 
-  el.innerHTML = ui.pageHeader('Recursos Humanos', 'Dotación, costo laboral y desarrollo de las personas de tu equipo.', actions)+
+  el.innerHTML = ui.pageHeader('Recursos Humanos', 'Dotación, costo laboral y desarrollo de las personas de tu equipo.', actions, company)+
     ui.tabsHtml([{key:'resumen',label:'Resumen'},{key:'empleados',label:'Empleados'},{key:'evaluacion',label:'Evaluación y desarrollo'}], state.tab)+
     body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderRRHH(el,user,company,state); });
@@ -5168,7 +5179,7 @@ G.pages.planificacion = function(el, user, company){
 };
 function renderPlanificacion(el, user, company, canCreate, canEdit, canDelete){
   const objectives = G.crud.byCompany(G.DB.objectives, company.id);
-  el.innerHTML = ui.pageHeader('Planificación', 'Objetivos estratégicos y su avance en el tiempo.', canCreate?'<button class="btn btn-primary" id="objNewBtn">'+icon('plus')+' Nuevo objetivo</button>':'')+
+  el.innerHTML = ui.pageHeader('Planificación', 'Objetivos estratégicos y su avance en el tiempo.', canCreate?'<button class="btn btn-primary" id="objNewBtn">'+icon('plus')+' Nuevo objetivo</button>':'', company)+
     (objectives.length ? '<div class="grid-2">'+objectives.map(o=>objectiveCardHtml(o)).join('')+'</div>' : ui.emptyState('target','Todavía no se definieron objetivos estratégicos para esta empresa.'));
   const b = document.getElementById('objNewBtn'); if(b) b.addEventListener('click', ()=>openObjectiveForm(company,null,()=>renderPlanificacion(el,user,company,canCreate,canEdit,canDelete)));
   el.querySelectorAll('[data-edit-obj]').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -5232,7 +5243,7 @@ G.pages.indicadores = function(el, user, company){
 };
 function renderIndicadores(el, user, company, canCreate, canEdit, canDelete){
   const list = G.crud.byCompany(G.DB.indicators, company.id);
-  el.innerHTML = ui.pageHeader('Indicadores', 'Sistema flexible de KPIs para tomar decisiones con datos.', canCreate?'<button class="btn btn-primary" id="kpiNewBtn">'+icon('plus')+' Nuevo indicador</button>':'')+
+  el.innerHTML = ui.pageHeader('Indicadores', 'Sistema flexible de KPIs para tomar decisiones con datos.', canCreate?'<button class="btn btn-primary" id="kpiNewBtn">'+icon('plus')+' Nuevo indicador</button>':'', company)+
     (list.length ? '<div class="grid-3">'+list.map(indicatorCardHtml).join('')+'</div>' : ui.emptyState('bar-chart','Todavía no hay indicadores definidos.'));
   list.forEach(k=> G.charts.sparklineSvgMount && null);
   el.querySelectorAll('[data-spark]').forEach(elx=>{
@@ -5311,7 +5322,7 @@ G.pages.innovacion = function(el, user, company){
 };
 function renderInnovacion(el, user, company, canCreate){
   const items = G.crud.byCompany(G.DB.innovation, company.id);
-  el.innerHTML = ui.pageHeader('Innovación y Mejora', 'Ideas, oportunidades y proyectos que hacen crecer al negocio, más allá de lo administrativo.', canCreate?('<button class="btn" id="innoQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="innoNewBtn">'+icon('plus')+' Nueva iniciativa</button>'):'')+
+  el.innerHTML = ui.pageHeader('Innovación y Mejora', 'Ideas, oportunidades y proyectos que hacen crecer al negocio, más allá de lo administrativo.', canCreate?('<button class="btn" id="innoQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="innoNewBtn">'+icon('plus')+' Nueva iniciativa</button>'):'', company)+
     '<div class="kanban">'+INNO_STAGES.map(stage=>{
       const col = items.filter(i=>i.status===stage);
       return '<div class="kanban-col" data-stage="'+stage+'"><div class="kanban-col-head"><span>'+stage+'</span><span class="kanban-count">'+col.length+'</span></div>'+
@@ -5412,7 +5423,7 @@ function renderConsultoria(el, user, company, state, isSuper){
   else if(state.tab==='reuniones'){ body = reunionesHtml(company); actions = isSuper?('<button class="btn" id="meetQuickBtn">'+icon('mic')+' Carga rápida</button><button class="btn btn-primary" id="meetNewBtn">'+icon('plus')+' Nueva reunión</button>'):''; }
   else if(state.tab==='notas' && isSuper){ body = notasHtml(company); actions = '<button class="btn btn-primary" id="noteNewBtn">'+icon('plus')+' Nueva nota</button>'; }
 
-  el.innerHTML = ui.pageHeader('Consultoría', 'Diagnóstico, plan de acción y seguimiento del acompañamiento a '+company.name+'.', actions)+
+  el.innerHTML = ui.pageHeader('Consultoría', 'Diagnóstico, plan de acción y seguimiento del acompañamiento a '+company.name+'.', actions, company)+
     ui.tabsHtml(tabs, state.tab) + body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderConsultoria(el,user,company,state,isSuper); });
 
@@ -5990,7 +6001,7 @@ function renderCompanyConfig(el, user, company, state){
   }
   else body = companyActivityHtml(company);
 
-  el.innerHTML = ui.pageHeader('Configuración', 'Módulos activos, usuarios y actividad de '+esc(company.name)+'.', actions)+
+  el.innerHTML = ui.pageHeader('Configuración', 'Módulos activos, usuarios y actividad de '+esc(company.name)+'.', actions, company)+
     ui.tabsHtml(tabs, state.tab)+ body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderCompanyConfig(el,user,company,state); });
 
@@ -6177,7 +6188,7 @@ G.pages.perfil = function(el, user, company){
 function renderPerfil(el, user, company){
   const canEdit = user.role==='SUPER_ADMIN' || user.role==='ADMIN_EMPRESA';
   el.innerHTML = ui.pageHeader('Perfil de empresa', 'Información general, contactos y presencia digital de '+esc(company.name)+'.',
-      canEdit ? '<button class="btn btn-primary" id="perfilEditBtn">'+icon('edit')+' Editar datos generales</button>' : '')+
+      canEdit ? '<button class="btn btn-primary" id="perfilEditBtn">'+icon('edit')+' Editar datos generales</button>' : '', company)+
     '<div class="card" style="margin-bottom:16px"><div class="flex items-center gap-sm" style="align-items:flex-start">'+
       '<div style="position:relative;flex:none">'+ui.companyLogoHtml(company, {size:56, fontSize:20})+
         (canEdit?'<button type="button" class="icon-btn" id="perfilLogoBtn" title="Cambiar logo" style="position:absolute;bottom:-8px;right:-8px;width:28px;height:28px;border-radius:50%">'+icon('image')+'</button>':'')+
@@ -6397,7 +6408,7 @@ G.pages.reportes = function(el, user, company){
 };
 function renderReportes(el, user, company, state){
   el.innerHTML = ui.pageHeader('Reportes', 'Generá informes listos para compartir o imprimir, con los datos actuales de '+esc(company.name)+'.',
-    '<button class="btn btn-primary" id="repPrintBtn">'+icon('download')+' Imprimir / Guardar como PDF</button>')+
+    '<button class="btn btn-primary" id="repPrintBtn">'+icon('download')+' Imprimir / Guardar como PDF</button>', company)+
     '<div class="module-grid" style="margin-bottom:20px">'+REPORT_TYPES.map(rt=>
       '<div class="module-toggle-card" data-report-type="'+rt.key+'" style="cursor:pointer;'+(state.type===rt.key?'border-color:var(--accent);background:var(--accent-soft)':'')+'">'+
       '<div class="mtc-icon">'+icon(rt.icon)+'</div><div class="mtc-body"><div class="mtc-title">'+esc(rt.label)+'</div><div class="mtc-sub">'+esc(rt.desc)+'</div></div>'+
@@ -6489,7 +6500,7 @@ G.pages.asistente = function(el, user, company){
   renderAsistente(el, user, company, state);
 };
 function renderAsistente(el, user, company, state){
-  el.innerHTML = ui.pageHeader('MODO Copiloto', 'Versión de demostración basada en reglas sobre los datos reales de '+esc(company.name)+' — preparado para conectarse a un motor de IA real más adelante.')+
+  el.innerHTML = ui.pageHeader('MODO Copiloto', 'Versión de demostración basada en reglas sobre los datos reales de '+esc(company.name)+' — preparado para conectarse a un motor de IA real más adelante.', null, company)+
     '<div class="card" style="display:flex;flex-direction:column;gap:14px;max-height:64vh;min-height:340px">'+
       '<div id="chatScroll" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px">'+
         state.messages.map(m=>'<div class="chat-bubble '+m.role+'">'+m.text+'</div>').join('')+
@@ -6690,7 +6701,7 @@ function renderIndiceTab(el, user, company, canEdit, state, tabs){
     ? ui.emptyState('activity', canEdit ? 'Todavía no se realizó un diagnóstico de esta empresa. Empezá por evaluar sus 8 dimensiones clave.' : 'Todavía no se realizó un diagnóstico de esta empresa.')
     : diagnosticoBodyHtml(company, diag, history, canEdit);
 
-  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn, company)+
     ui.tabsHtml(tabs, state.tab) + body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
 
@@ -6745,7 +6756,7 @@ function renderFodaTab(el, user, company, canEdit, state, tabs){
       swotQuadrantHtml('Amenazas', swot.amenazas, 'warning', 'alert-triangle')+
     '</div>';
 
-  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn, company)+
     ui.tabsHtml(tabs, state.tab) + body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
 
@@ -6826,7 +6837,7 @@ function renderCanvasTab(el, user, company, canEdit, state, tabs){
       CANVAS_BLOCKS.map(b=>canvasBlockHtml(b, canvas[b.key])).join('')+
     '</div>';
 
-  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn)+
+  el.innerHTML = ui.pageHeader('Diagnóstico', 'Evaluación integral de la gestión de '+esc(company.name)+': cómo está, qué está pasando y qué conviene priorizar.', actionBtn, company)+
     ui.tabsHtml(tabs, state.tab) + body;
   ui.wireTabs(el, tab=>{ state.tab=tab; renderDiagnostico(el,user,company,canEdit,state); });
 
@@ -6992,7 +7003,7 @@ function renderHistoria(el, user, company, isSuper, state){
   const events = G.historyForCompany(company.id, {includePrivate:isSuper}).slice().reverse(); // más reciente primero
   const filtered = state.filter==='todos' ? events : events.filter(e=>e.type===state.filter);
 
-  el.innerHTML = ui.pageHeader('Historia de Gestión', 'La evolución de '+esc(company.name)+' en un solo lugar: diagnósticos, objetivos, acciones, reuniones y cambios, en orden cronológico.')+
+  el.innerHTML = ui.pageHeader('Historia de Gestión', 'La evolución de '+esc(company.name)+' en un solo lugar: diagnósticos, objetivos, acciones, reuniones y cambios, en orden cronológico.', null, company)+
     '<div class="hist-filters">'+HIST_FILTERS.filter(f=>!f.superOnly || isSuper).map(f=>
       '<button type="button" data-hist-filter="'+f.key+'" class="'+(state.filter===f.key?'active':'')+'">'+esc(f.label)+(f.key!=='todos'?' ('+events.filter(e=>e.type===f.key).length+')':'')+'</button>'
     ).join('')+'</div>'+
@@ -7057,7 +7068,7 @@ function renderRed(el, user, company){
   const requests = G.DB.helpRequests.filter(r=>r.companyId===company.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
 
   el.innerHTML = ui.pageHeader('MODO Red', 'Una red de profesionales externos (finanzas, costos, RRHH, tecnología y más) que va a poder intervenir en tu empresa cuando lo necesites. Hoy podés dejar una solicitud; la asignación de profesionales llega en una etapa futura.',
-      '<button class="btn btn-primary" id="redHelpBtn">'+icon('plus')+' Necesito ayuda</button>')+
+      '<button class="btn btn-primary" id="redHelpBtn">'+icon('plus')+' Necesito ayuda</button>', company)+
     '<div class="card" style="margin-bottom:16px">'+
       '<div class="card-title" style="margin-bottom:12px">Cómo funciona</div>'+
       '<div class="flex items-center gap-sm" style="flex-wrap:wrap;font-size:12.5px">'+
@@ -7534,7 +7545,7 @@ function renderVideollamadas(el, user, company){
     (isSuper?'<button class="btn btn-primary" id="vcNewClienteBtn">'+icon('video')+' Videollamada con la empresa</button>':'')+
     (isAdminEmpresa?'<button class="btn btn-primary" id="vcNewEquipoBtn" style="margin-left:8px">'+icon('video')+' Videollamada con el equipo</button>':'');
 
-  el.innerHTML = ui.pageHeader('Videollamadas', 'Iniciá una videollamada o compartí una invitación — funciona desde cualquier navegador, sin instalar nada.', actions)+
+  el.innerHTML = ui.pageHeader('Videollamadas', 'Iniciá una videollamada o compartí una invitación — funciona desde cualquier navegador, sin instalar nada.', actions, company)+
     '<div class="grid-2">'+
       ui.card('Consultor ↔ Empresa', 'Reuniones virtuales entre tu consultor y '+company.name+'.', vcListHtml(clienteCalls))+
       ui.card('Empresa ↔ Equipo', 'Reuniones virtuales del administrador con sus colaboradores.', vcListHtml(equipoCalls))+
@@ -7650,7 +7661,7 @@ function renderChat(el, user, company, state, isSuper){
   const tabs = isSuper ? [{key:'consultoria', label:'Consultoría'}] : [{key:'interno',label:'Equipo interno'},{key:'consultoria',label:'Consultoría'}];
   const messages = G.DB.chatMessages.filter(m=>m.companyId===company.id && m.channel===state.channel).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
 
-  el.innerHTML = ui.pageHeader('Chat', channelDescHtml(state.channel, company, isSuper))+
+  el.innerHTML = ui.pageHeader('Chat', channelDescHtml(state.channel, company, isSuper), null, company)+
     (tabs.length>1 ? ui.tabsHtml(tabs, state.channel) : '')+
     '<div class="chat-panel">'+
       '<div class="chat-messages" id="chatMessages">'+
@@ -7933,7 +7944,7 @@ function renderAgro(el, user, company, state){
   else if(state.tab==='maquinaria') body = agroMaquinariaHtml(company, canCreate, canEdit, canDelete);
   else if(state.tab==='reportes') body = agroReportsHtml(company, state);
 
-  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores, lotes, tareas de campo, ganado, maquinaria y reportes.', agroHeaderActionsHtml(state, canCreate, canExport)) +
+  el.innerHTML = ui.pageHeader('Agropecuario', 'Indicadores, lotes, tareas de campo, ganado, maquinaria y reportes.', agroHeaderActionsHtml(state, canCreate, canExport), company) +
     ui.tabsHtml(AGRO_TABS, state.tab) +
     body;
 
@@ -8656,7 +8667,7 @@ function renderTurismo(el, user, company, state){
   else if(state.tab==='reservas') body = turismoBookingsTableHtml(company, state, canCreate, canEdit, canDelete);
   else if(state.tab==='reportes') body = turismoReportHtml(company, state);
 
-  el.innerHTML = ui.pageHeader('Turismo y hotelería', 'Unidades, reservas, ocupación e ingresos por alojamiento.', turismoHeaderActionsHtml(state, canCreate, canExport)) +
+  el.innerHTML = ui.pageHeader('Turismo y hotelería', 'Unidades, reservas, ocupación e ingresos por alojamiento.', turismoHeaderActionsHtml(state, canCreate, canExport), company) +
     ui.tabsHtml(TURISMO_TABS, state.tab) +
     body;
 
@@ -8909,7 +8920,7 @@ function renderClub(el, user, company, state){
   else if(state.tab==='eventos') body = clubEventsTableHtml(company, state, canCreate, canEdit, canDelete);
   else if(state.tab==='categorias') body = clubCategoriesHtml(company);
 
-  el.innerHTML = ui.pageHeader('Club y socios', 'Padrón de socios, cuotas, eventos y estadísticas de '+esc(company.name)+'.', clubHeaderActionsHtml(state, canCreate)) +
+  el.innerHTML = ui.pageHeader('Club y socios', 'Padrón de socios, cuotas, eventos y estadísticas de '+esc(company.name)+'.', clubHeaderActionsHtml(state, canCreate), company) +
     ui.tabsHtml(CLUB_TABS, state.tab) +
     body;
 
@@ -9226,7 +9237,7 @@ function renderProduccion(el, user, company, state){
   else if(state.tab==='costos') body = productionCostsTableHtml(company, state, canCreate, canEdit, canDelete);
   else if(state.tab==='eventos') body = contentEventsTableHtml(company, canCreate, canEdit, canDelete);
 
-  el.innerHTML = ui.pageHeader('Producción y eventos', 'Producciones audiovisuales, costos, agenda de eventos y venta de entradas de '+esc(company.name)+'.', produccionHeaderActionsHtml(state, canCreate)) +
+  el.innerHTML = ui.pageHeader('Producción y eventos', 'Producciones audiovisuales, costos, agenda de eventos y venta de entradas de '+esc(company.name)+'.', produccionHeaderActionsHtml(state, canCreate), company) +
     ui.tabsHtml(PRODUCCION_TABS, state.tab) +
     body;
 
